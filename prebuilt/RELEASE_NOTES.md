@@ -1,18 +1,15 @@
-Frameforge 0.1.0 — experimental native Linux video editor
+Frameforge 0.1.1 — Ubuntu playback dependency fix
 
-Install from source on Linux Mint 22+, Ubuntu 24.04+ or Debian 12+ (Qt 6.4+):
+One-command source installation (Mint 22+, Ubuntu 24.04+, Debian 12+):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/klcenka9/frameforge/v0.1.0/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/klcenka9/frameforge/v0.1.1/scripts/install.sh | bash
 ```
 
-The installer uses sudo apt-get for distribution dependencies, builds as your normal user, and installs to ~/.local. Launch with ~/.local/bin/frameforge. Do not run the whole installer with sudo.
+Installs distribution build/runtime dependencies using sudo apt-get, builds as your normal user, and installs under ~/.local. Launch: ~/.local/bin/frameforge. Do not run the entire installer as root.
 
-Included: source import/playback, frame-based multitrack editing, split/trim/move/delete, undo/redo, project persistence/recovery, and background CPU timeline preview/export.
+This patch includes GStreamer container/codec plugins required by Ubuntu Qt 6.4 for MP4 preview playback. Ubuntu 24.04 / Qt 6.4.2 and Debian 13 / Qt 6.8.2 both passed all four CTest suites. Physical Mint/GPU hardware is still unverified.
 
-Assets:
-- Complete project ZIP, including a built executable, tests and documentation.
-- Debian package built on Debian 13 x86_64 with Qt 6.8.2; not a universal Mint binary.
-- Source archive matching this tag and SHA256 checksums.
+Assets: complete project ZIP with built application and tests; Debian 13 x86_64 / Qt 6.8.2 package; tagged source archive; SHA256 checksums. The Debian binary is not a universal Mint binary; use the source installer on other supported distributions.
 
-Verification: four CTest suites and Xvfb X11 editing/playback passed on Debian 13. The source installer completed a real Release build and user-prefix installation with existing dependencies. Clean-machine Mint/Ubuntu installation and physical GPU/audio hardware remain unverified. Advanced workspaces are planned; edited timeline playback requires a background preview render.
+Frameforge remains experimental: background render is required for edited timeline playback, and compositing/grading/professional audio workspaces remain planned.
