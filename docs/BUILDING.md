@@ -23,7 +23,7 @@ cmake --preset release
 cmake --build --preset release -j4
 ctest --preset release
 (umask 022; cd build-release && cpack -G DEB)
-sudo apt install ./build-release/Frameforge-0.1.0-Linux.deb
+sudo apt install ./build-release/Frameforge-0.1.1-Linux.deb
 sudo apt remove frameforge
 ```
 
@@ -38,3 +38,5 @@ Build packages on the oldest target distribution to avoid glibc/Qt symbol incomp
 - Export fails: error dialog includes FFmpeg diagnostics. Existing outputs are refused. Use a writable directory and new filename; missing-media errors require relinking.
 - X11 fallback: `QT_QPA_PLATFORM=xcb ./build/frameforge`; Wayland: `QT_QPA_PLATFORM=wayland ./build/frameforge` if the relevant Qt platform plugin is installed. Neither implies a tested real desktop configuration.
 - CPU decoding for Qt's FFmpeg backend: `QT_FFMPEG_DECODING_HW_DEVICE_TYPES=, ./build/frameforge` (Qt 6.8 tested). This is a Qt backend debug setting and may vary by version. Export always uses software decoding/encoding here.
+
+For Qt builds using GStreamer (including Ubuntu 24.04 Qt 6.4), install `gstreamer1.0-plugins-good gstreamer1.0-libav` for MP4/MPEG-4/H.264/AAC playback. The one-command installer includes these packages.

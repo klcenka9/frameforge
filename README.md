@@ -5,7 +5,7 @@ A real, experimental C++20 / Qt 6 desktop video editor for Linux. Independent co
 ## Install with one command (Linux Mint / Ubuntu / Debian)
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/klcenka9/frameforge/v0.1.0/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/klcenka9/frameforge/v0.1.1/scripts/install.sh | bash
 ```
 
 The installer uses `sudo apt-get` for distribution dependencies, builds the tagged source as your normal user, and installs to `~/.local`. Launch with `~/.local/bin/frameforge`. Target distributions: Mint 22+, Ubuntu 24.04+, Debian 12+ (Qt 6.4+ required). These source-install targets are not yet all hardware-tested. Read [the installer](scripts/install.sh) before running it if you prefer to review the commands. Do not run the whole installer with sudo.
@@ -30,7 +30,7 @@ On a compatible Ubuntu/Mint development machine (package names can differ by rel
 
 ```sh
 sudo apt update
-sudo apt install build-essential cmake qt6-base-dev qt6-multimedia-dev libgl-dev ffmpeg
+sudo apt install build-essential cmake qt6-base-dev qt6-multimedia-dev libgl-dev ffmpeg gstreamer1.0-plugins-good gstreamer1.0-libav
 cmake --preset dev
 cmake --build --preset dev -j4
 ctest --preset dev

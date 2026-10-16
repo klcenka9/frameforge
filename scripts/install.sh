@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 set -euo pipefail
 repo="klcenka9/frameforge"
-version="0.1.0"
+version="0.1.1"
 prefix="${HOME}/.local"
 source_dir=""
 install_dependencies=true
@@ -15,7 +15,7 @@ while [[ $# -gt 0 ]]; do
 Frameforge source installer (Debian / Ubuntu / Linux Mint)
 Usage: bash install.sh [--prefix /absolute/path] [--no-deps] [--source /local/checkout]
 Default: install distribution build dependencies through sudo apt-get, download
-v0.1.0, build as your current user and install under $HOME/.local.
+v0.1.1, build as your current user and install under $HOME/.local.
 Requires Qt >= 6.4 (target: Mint 22+, Ubuntu 24.04+, Debian 12+).
 --no-deps skips apt when dependencies are already installed.
 No proprietary drivers or bundled multimedia codecs are installed.
@@ -39,7 +39,7 @@ if $install_dependencies; then
     echo 'Qt 6.4+ is required. Use Mint 22+, Ubuntu 24.04+ or Debian 12+, or provide a compatible Qt SDK with --no-deps.' >&2
     exit 1
   fi
-  sudo apt-get install -y build-essential cmake qt6-base-dev qt6-multimedia-dev libgl-dev ffmpeg curl ca-certificates
+  sudo apt-get install -y build-essential cmake qt6-base-dev qt6-multimedia-dev libgl-dev ffmpeg gstreamer1.0-plugins-good gstreamer1.0-libav curl ca-certificates
 fi
 for tool in cmake c++ ffmpeg ffprobe; do
   command -v "$tool" >/dev/null || { echo "Missing dependency: $tool" >&2; exit 1; }
