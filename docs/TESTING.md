@@ -30,4 +30,8 @@ In this workspace, use the local SDK commands in README and run graphical tests 
 
 ## Not verified
 
-Mint/Ubuntu builds or installs; real Wayland/Cinnamon/GNOME; physical NVIDIA/Intel/hybrid devices or failed GPU initialization; multi-monitor switching; actual audio output; long-running or VFR footage; arbitrary source stream offsets/rotation; 4K/8K performance; memory/disk growth over hours; abrupt-process recovery; disk-full handling; 10,000-clip UI performance. No corresponding compatibility or performance claim is made. A single recovery slot, 64-clip render limit, session-local undo, and render-before-play timeline previews are current product limits.
+Mint builds/installs; clean-machine Ubuntu interactive installation; real Wayland/Cinnamon/GNOME; physical NVIDIA/Intel/hybrid devices or failed GPU initialization; multi-monitor switching; actual audio output; long-running or VFR footage; arbitrary source stream offsets/rotation; 4K/8K performance; memory/disk growth over hours; abrupt-process recovery; disk-full handling; 10,000-clip UI performance. No corresponding compatibility or performance claim is made. A single recovery slot, 64-clip render limit, session-local undo, and render-before-play timeline previews are current product limits.
+
+## Ubuntu 24.04 regression verification (0.1.1)
+
+GitHub Actions run https://github.com/klcenka9/frameforge/actions/runs/38961945194 passed configure, build and all four CTest suites on Ubuntu 24.04 / Qt 6.4.2. The initial run caught missing GStreamer MP4 decoding; installing gstreamer1.0-plugins-good and gstreamer1.0-libav fixed it without weakening the desktop tests. Debian 13 Release 0.1.1 also passed 4/4 suites in 4.87 seconds. The public v0.1.0 installer was downloaded and completed a real source-download/build/install with existing dependencies; v0.1.1 adds the verified Ubuntu multimedia dependencies.

@@ -2,7 +2,7 @@
 
 Requirements: C++20 compiler, CMake 3.22+, Qt 6.4+ Core/Gui/Widgets/Concurrent/Multimedia/MultimediaWidgets/Test, FFmpeg and FFprobe on PATH. Qt is dynamically linked; FFmpeg runs as an external process. No external source is vendored into the application. Build/test commands are in README.
 
-Debian 13 / Qt 6.8.2 / GCC 14 is the current build environment. Mint/Ubuntu compilation is a target, not yet certified. Qt runtime multimedia codec/plugin availability varies by distribution. CTest generates its own small media; no footage is downloaded.
+Debian 13 / Qt 6.8.2 / GCC 14 is the current build environment. Ubuntu 24.04 / Qt 6.4.2 compilation and headless tests passed in GitHub Actions; Mint installations remain unverified. Qt runtime multimedia codec/plugin availability varies by distribution. CTest generates its own small media; no footage is downloaded.
 
 ## Native install / uninstall
 

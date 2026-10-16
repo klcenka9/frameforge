@@ -11,3 +11,5 @@ Verification on Debian 13: `bash -n`, help output, rejection of unknown options 
 Repository: https://github.com/klcenka9/frameforge . The v0.1.1 tag supplies the source installer and source archive. GitHub Releases carry the Debian 13 x86_64 package and complete project ZIP. The source installer is the recommended path for other supported distributions; binary compatibility with Mint is not implied.
 
 Ubuntu 24.04 CI reproduced missing MP4 decoding with Qt 6.4/GStreamer. The installer and CI now install gstreamer1.0-plugins-good (container demuxers) and gstreamer1.0-libav (video/audio decoders); FFmpeg CLI alone does not supply Qt GStreamer playback plugins. Existing desktop tests cover this regression.
+
+The corrected Ubuntu 24.04 build and all four test suites passed: https://github.com/klcenka9/frameforge/actions/runs/38961945194 .
