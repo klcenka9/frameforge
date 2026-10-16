@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Frameforge
+Comment=Experimental native non-linear video editor
+Exec=frameforge
+Icon=video-x-generic
+Terminal=false
+Categories=AudioVideo;Video;AudioVideoEditing;

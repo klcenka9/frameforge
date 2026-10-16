@@ -1,0 +1,9 @@
+# Native project and recovery
+
+`.ffg` is UTF-8 JSON, `format: frameforge`, `version: 1`. Resolution and rational rate (`num` / `den`) belong to the project. Media entries store stable IDs, relative paths, duration in microseconds, dimensions and stream flags. Tracks store kind, name, mute, solo and lock. Clips store stable ID, media reference, track index, timeline start, source in and duration.
+
+All frame positions and microsecond durations serialize as decimal strings to preserve exact integers. A clip occupies `[start, start+duration)` and samples `[in, in+duration)` at project rate. Clips on one track cannot overlap. Different video tracks composite; audio streams mix. All split/trim/move operations preserve source bounds. Source footage is never modified. Project loads validate into a new model before replacing active state. Unknown versions are refused; there is no older schema to migrate yet.
+
+QSaveFile writes and atomically commits in the destination directory. Media paths are relative to that directory; cross-volume absolute paths are permitted. Export uses a unique temporary MP4 next to the intended output, validates stream presence/duration, and renames without overwriting. Cancellation/failure removes the partial file. An OS kill may leave an unreferenced partial MP4; delete it after verifying no render uses it.
+
+Dirty projects get a recovery snapshot every 30 seconds under `QStandardPaths::AppLocalDataLocation` (`~/.local/share/Frameforge/Frameforge/recovery.ffg` on common Linux configurations; XDG settings can change this). File → Recover autosave restores it as an unsaved project. Successful manual save and clean/discarded close remove recovery. Only one recovery slot exists; concurrent editor instances are not yet supported. Undo history is session-local, not persisted. No effects/graphs/keyframes exist yet, so schema 1 has no such records.

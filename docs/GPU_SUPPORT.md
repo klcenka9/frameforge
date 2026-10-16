@@ -1,0 +1,7 @@
+# GPU and Linux compatibility
+
+Current rendering is CPU/software only; no CUDA dependency. The UI exposes only software encoders found in the running FFmpeg build (`libx264` or `mpeg4`, plus AAC). Missing or failing codecs produce an error and remove partial output. Automatic retry with a different codec is not implemented; select the other available software encoder and retry.
+
+Help → Backend diagnostics reports `/dev/dri` render nodes, `/dev/nvidia0` presence and compiled NVENC/VA-API/QSV encoder names. These are inventory, **not** successful device initialization. No hardware option is exposed until runtime initialization, format support, failure recovery and output validation can be tested. NVIDIA NVDEC/NVENC, Intel VA-API/QSV and hybrid selection remain roadmap work. Qt Multimedia source playback chooses its available backend independently; software preview was tested with hardware decoding disabled.
+
+No real NVIDIA/Intel/hybrid hardware was present for testing. No real Mint/Cinnamon/GNOME/Wayland or multi-monitor testing has occurred. Offscreen 1×/2× tests and an Xvfb X11 test are separate from real desktop certification. No 4K/8K or 60 FPS performance claim is made. Large files are not read into RAM by the application, but previews are full temporary renders and can consume significant disk space. Clip count is limited to 64 for a single render; project models support up to 10,000 clips, without a performance guarantee.

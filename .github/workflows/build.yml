@@ -1,0 +1,26 @@
+name: Linux build and test
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ubuntu:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake qt6-base-dev qt6-multimedia-dev libgl-dev ffmpeg
+      - name: Configure
+        run: cmake --preset release
+      - name: Build
+        run: cmake --build --preset release -j4
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_FFMPEG_DECODING_HW_DEVICE_TYPES: ','
+          PULSE_SERVER: unix:/tmp/frameforge-no-pulse
+        run: ctest --preset release
