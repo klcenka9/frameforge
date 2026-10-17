@@ -9,3 +9,5 @@ A source/preview playback switch during preview generation now preserves the use
 Regression coverage includes timeline Play/pause/resume/seek, source playback isolation and repeated destruction, local file drops, actual pool drag MIME, native viewport drops, multi-file order, source reuse, copy-only actions, undo/redo and unsupported remote data. Playback and drop tests were observed failing on the old behavior before implementation. The empty-timeline ambiguity also has an observed red/green regression.
 
 Preview generation is still required after edits; this patch does not provide a new live timeline engine or GPU compatibility guarantee. Existing source projects remain schema 1.
+
+Verification: Debian 13 full suite 4/4; X11 desktop 7/7 Qt Test results; Ubuntu 24.04/Qt 6.4.2/GStreamer full suite 4/4 with fatal GLib criticals (run https://github.com/klcenka9/frameforge/actions/runs/39013508445). No reproduction of the supplied GLib warning in these tests.

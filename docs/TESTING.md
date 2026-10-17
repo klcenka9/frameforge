@@ -35,3 +35,11 @@ Mint builds/installs; clean-machine Ubuntu interactive installation; real Waylan
 ## Ubuntu 24.04 regression verification (0.1.1)
 
 GitHub Actions run https://github.com/klcenka9/frameforge/actions/runs/38961945194 passed configure, build and all four CTest suites on Ubuntu 24.04 / Qt 6.4.2. The initial run caught missing GStreamer MP4 decoding; installing gstreamer1.0-plugins-good and gstreamer1.0-libav fixed it without weakening the desktop tests. Debian 13 Release 0.1.1 also passed 4/4 suites in 4.87 seconds. The public v0.1.0 installer was downloaded and completed a real source-download/build/install with existing dependencies; v0.1.1 adds the verified Ubuntu multimedia dependencies.
+
+## Playback and drop regression verification (0.1.2)
+
+Debian 13 / Qt 6.8.2: full build and 4/4 CTest suites passed in 16.70 seconds. Native X11/Xvfb desktop test: 7 Qt Test results passed in 8.078 seconds. Ubuntu 24.04 / Qt 6.4.2 / GStreamer: configure/build and 4/4 suites passed at https://github.com/klcenka9/frameforge/actions/runs/39013508445 . Desktop suites run with G_DEBUG=fatal-criticals; no GLib critical was produced in these fixtures.
+
+New coverage exercises Play timeline and moving playhead, pause/resume/seek, separate source playback, empty timeline guidance, source override during a preview render, file drops into the native media-pool viewport and timeline, multi-file ordering, internal pool MIME, copy-only drop actions, source preservation and reuse, undo/redo, and repeated player destruction. Actual double-click insertion and mouse-driven clip movement are exercised while source playback continues. Play/source confusion and refused file drops were observed failing before their fixes.
+
+A user additionally reported g_object_unref/G_IS_OBJECT during clip work and possibly idle, without an exact reproducible source file or stack trace. That specific warning remains unconfirmed; passing critical-log tests is not a claim that every GStreamer/system-library issue is fixed. See FIXES_0.1.2.md for scope and remaining render-before-play limitation.
