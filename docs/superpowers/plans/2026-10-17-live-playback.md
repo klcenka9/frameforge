@@ -75,3 +75,5 @@
 - Final review: fresh-context reviewer found no Critical issues, four Important ones (off-grid sampling parity, multistream policy, video EOF layering, audio-clock stalls). All four reproduced red in dedicated tests and passed after fixes; full suite 5/5, 30.57 seconds. The optional suspended-device case failed before watchdog/reset changes and passed afterwards; private audio tests 4/4, 13.713 seconds.
 - Review minors: design status and task checkboxes were already updated at the checkpoint; no deferred minor findings. Source-player GLib warning remains unresolved, as documented.
 - Additional validation: clean source-installer build/install completed; CPack DEB built and inspected for actual libav dependencies, 0755 directories and no workspace RUNPATH. Initial Ubuntu24/Qt6.4.2 CI 39016160916 passed all suites + virtual audio + X11.
+
+- Final reviewed-source Ubuntu24.04 CI 39016590117: success for build, full CTest, private audio suspension/fallback and native X11. Final local X11: 8/8, 5.223 seconds. Product source is unchanged after this validated checkpoint; remaining changes are documentation and release assets.

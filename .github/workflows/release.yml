@@ -11,12 +11,12 @@ jobs:
       - name: Verify release asset checksums
         working-directory: prebuilt
         run: sha256sum --check SHA256SUMS
-      - name: Publish v0.1.2 assets
+      - name: Publish v0.2.0 assets
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          if ! gh release view v0.1.2 >/dev/null 2>&1; then
-            gh release create v0.1.2 --verify-tag --title 'Frameforge 0.1.2 — Linux editor foundation' --notes-file prebuilt/RELEASE_NOTES.md
+          if ! gh release view v0.2.0 >/dev/null 2>&1; then
+            gh release create v0.2.0 --verify-tag --title 'Frameforge 0.2.0 — direct timeline playback' --notes-file prebuilt/RELEASE_NOTES.md
           fi
-          gh release upload v0.1.2 --clobber prebuilt/Frameforge-0.1.2-komplet.zip prebuilt/Frameforge-0.1.2-Linux.deb prebuilt/frameforge-0.1.2-source.tar.gz prebuilt/SHA256SUMS
+          gh release upload v0.2.0 --clobber prebuilt/Frameforge-0.2.0-komplet.zip prebuilt/Frameforge-0.2.0-Linux.deb prebuilt/frameforge-0.2.0-source.tar.gz prebuilt/SHA256SUMS

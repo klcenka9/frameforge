@@ -57,3 +57,5 @@ Final local 0.2.0 regression suite after review fixes: **5/5 suites passed in 30
 The extended private audio test passed **4/4 Qt Test results in 13.713 seconds**, including normal device-clock transport and deliberately suspending the sink. A clean source-install build with `--no-deps --source` completed in a fresh temporary directory. The installed binary dynamically links libav and has no build-workspace RUNPATH. The Debian package declares the actual libav ABI dependencies.
 
 Initial Ubuntu 24.04 / Qt 6.4.2 / FFmpeg 6.1 CI passed all five suites, virtual audio and native X11: https://github.com/klcenka9/frameforge/actions/runs/39016160916 . Final review-fix CI is recorded with the release.
+
+Final reviewed-source Ubuntu24.04 / Qt6.4.2 / FFmpeg6.1 verification passed configure, build, **5/5 CTest suites**, private audio (including suspended-device fallback) and native X11: https://github.com/klcenka9/frameforge/actions/runs/39016590117 . Final Debian X11 desktop run passed 8/8 Qt Test results in 5.223 seconds.

@@ -12,6 +12,8 @@ The installer uses `sudo apt-get` for distribution dependencies, builds the tagg
 
 For an existing development SDK: `bash scripts/install.sh --no-deps --source "$PWD"`. Use `--prefix /absolute/path` for another user-writable install location. The installer does not replace GPU drivers. [GitHub releases](https://github.com/klcenka9/frameforge/releases) contain the prebuilt **Debian 13 x86_64 / Qt 6.8.2** package and complete ZIP; build from source on other distributions.
 
+[Current desktop screenshot](docs/desktop-x11.png)
+
 ## Working now
 
 - Dockable dark desktop UI, saved dock layouts, Media/Cut/Edit/Deliver views sharing one project.
