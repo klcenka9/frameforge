@@ -77,3 +77,5 @@
 - Additional validation: clean source-installer build/install completed; CPack DEB built and inspected for actual libav dependencies, 0755 directories and no workspace RUNPATH. Initial Ubuntu24/Qt6.4.2 CI 39016160916 passed all suites + virtual audio + X11.
 
 - Final reviewed-source Ubuntu24.04 CI 39016590117: success for build, full CTest, private audio suspension/fallback and native X11. Final local X11: 8/8, 5.223 seconds. Product source is unchanged after this validated checkpoint; remaining changes are documentation and release assets.
+
+- Release preparation: v0.2.0 source tag a5fcb11; complete ZIP archive integrity checked, tagged source archive generated with prebuilt excluded, Debian13 binary/DEB staged, SHA256 checksums verified. Publication follows the standing user authorization for GitHub distribution.

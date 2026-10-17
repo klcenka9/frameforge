@@ -1,17 +1,20 @@
-Frameforge 0.1.2 — timeline playback and drag/drop fixes
+Frameforge 0.2.0 — direct timeline playback
 
-Close the old application, then update/install from source:
+Close the old application, then update/install:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/klcenka9/frameforge/v0.1.2/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/klcenka9/frameforge/v0.2.0/scripts/install.sh | bash
 ```
 
-Launch: `~/.local/bin/frameforge`. Targets: Mint 22+, Ubuntu 24.04+, Debian 12+ with Qt 6.4+.
+Launch: `~/.local/bin/frameforge`. Source-install targets: Mint22+, Ubuntu24.04+, Debian12+, Qt6.4+ and FFmpeg5.1+.
 
-- Play timeline / Space now plays edited content and advances/scrolls the playhead, automatically building a background preview after edits. Source playback has a separate button. Empty timelines show clear guidance.
-- Drop local files into the media pool/window or directly onto a timeline track; drag imported media onto tracks. Ordered batch placement, undo/redo, source reuse and copy-only actions preserve original files.
-- Avoid duplicate source reloads and detach player outputs explicitly before destruction. Desktop tests treat GLib criticals as fatal.
+- Split: **S / Ctrl+B**, visible in menu and toolbar. Without a selection, split the topmost editable clip under the playhead. Typing S stays text input.
+- **Space / Play timeline** plays directly from source clips. Split, edits, seeking and pause/resume never encode a preview file. Export runs only from Deliver's Render/Export control.
+- Trimmed frames, layers, gaps, stream EOF reveal and audio mixing follow timeline timestamps. Adjacent splits retain audio continuity, including fractional frame rates. Live/export use first video/audio streams and consistent hold-last sampling.
+- Bounded worker queues, generation cancellation and explicit loading feedback keep seeks/edits independent from final export. With an absent/stalled device, playback can continue silently on a monotonic clock; Pause/Play retries audio.
 
-Verification: Debian 13 and Ubuntu 24.04/GStreamer each passed 4/4 CTest suites; X11 desktop tests passed. Tests include actual double-click insertion and mouse-driven clip movement while playback continues. The supplied g_object_unref/G_IS_OBJECT warning was not reproduced, so a conclusive fix for that specific library warning is not claimed.
+Verification: Debian13 and Ubuntu24.04 each passed **5/5 CTest suites**. Private PulseAudio tests passed normal transport and deliberately suspended-device fallback (4/4 Qt Test results). Native X11 passed on both environments. Clean source installer build/install and Debian package dependency/RUNPATH checks passed. Final Ubuntu evidence: https://github.com/klcenka9/frameforge/actions/runs/39016590117 . Review fixes were covered by observed failing-then-passing regressions.
 
-Assets include the complete source/binary ZIP, Debian 13 x86_64 / Qt 6.8.2 package, tagged source and SHA256 checksums. The Debian package is not a universal Mint binary; use the source installer for other target distributions. Timeline previews still require background rendering; advanced workspaces remain planned.
+ZIP includes complete source, built executable, DEB and source archive. The binary/DEB is specifically **Debian13 x86_64 / Qt6.8.2 / FFmpeg7.1**, not a universal Mint binary; use the source installer elsewhere. Preview defaults to960x540; export retains project resolution. Live/export audio now share a hard ±0.95 peak clamp, replacing the previous export-only limiter.
+
+Experimental limits: final export retains the existing64-clip graph limit; proxies, effects and color management are not implemented; physical speakers, Mint/hybrid hardware and4K/8K real-time performance remain unverified. The reported GLib/GStreamer source-browsing warning is still unresolved; this release does not claim a proven fix for it.
