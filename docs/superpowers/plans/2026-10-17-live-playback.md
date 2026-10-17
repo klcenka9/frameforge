@@ -61,7 +61,7 @@
 - [x] Add libav dev dependencies and pkg-config; update runtime package dependencies and direct-playback documentation.
 - [x] Run all CTest suites, source installer smoke check, clean Release build and package validation.
 - [x] Fresh review of whole diff; fix important findings with regression tests, rerun suite.
-- [ ] Publish updated source and built artifacts to the user-authorized repository only after validation; record platform limits accurately.
+- [x] Publish updated source and built artifacts to the user-authorized repository only after validation; record platform limits accurately.
 
 ## Execution ledger
 
@@ -79,3 +79,5 @@
 - Final reviewed-source Ubuntu24.04 CI 39016590117: success for build, full CTest, private audio suspension/fallback and native X11. Final local X11: 8/8, 5.223 seconds. Product source is unchanged after this validated checkpoint; remaining changes are documentation and release assets.
 
 - Release preparation: v0.2.0 source tag a5fcb11; complete ZIP archive integrity checked, tagged source archive generated with prebuilt excluded, Debian13 binary/DEB staged, SHA256 checksums verified. Publication follows the standing user authorization for GitHub distribution.
+
+- Release completed: https://github.com/klcenka9/frameforge/releases/tag/v0.2.0 ; publish workflow39016926681 succeeded. All three downloaded assets matched the published and local SHA256SUMS; the downloaded ZIP passed integrity validation (61 files). The public v0.2.0 installer was downloaded and completed a fresh tag-download/build/install using existing SDK dependencies. Main is fast-forwarded; no product changes followed the validated source checkpoint.

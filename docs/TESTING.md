@@ -59,3 +59,5 @@ The extended private audio test passed **4/4 Qt Test results in 13.713 seconds**
 Initial Ubuntu 24.04 / Qt 6.4.2 / FFmpeg 6.1 CI passed all five suites, virtual audio and native X11: https://github.com/klcenka9/frameforge/actions/runs/39016160916 . Final review-fix CI is recorded with the release.
 
 Final reviewed-source Ubuntu24.04 / Qt6.4.2 / FFmpeg6.1 verification passed configure, build, **5/5 CTest suites**, private audio (including suspended-device fallback) and native X11: https://github.com/klcenka9/frameforge/actions/runs/39016590117 . Final Debian X11 desktop run passed 8/8 Qt Test results in 5.223 seconds.
+
+Published-release round trip: GitHub release39016926681 successfully uploaded ZIP, DEB, source and checksums. Downloaded copies matched local/published SHA256SUMS; ZIP integrity check passed for61 files. The actual public v0.2.0 installer also completed source download, fresh build and install with existing SDK dependencies (`--no-deps`, temporary per-user prefix). The sudo/apt branch is not run in this managed workspace; Ubuntu CI validates dependency package availability.
