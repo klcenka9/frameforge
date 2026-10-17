@@ -6,6 +6,7 @@
 namespace ff {
 class VideoMonitor : public QWidget {
     QImage image;
+
   public:
     explicit VideoMonitor(QWidget *parent = nullptr) : QWidget(parent) {
         setMinimumSize(320, 180);
@@ -16,13 +17,15 @@ class VideoMonitor : public QWidget {
         image = frame;
         update();
     }
+
   protected:
     void paintEvent(QPaintEvent *) override {
         QPainter painter(this);
         painter.fillRect(rect(), Qt::black);
         if (!image.isNull()) {
             const auto fit = image.size().scaled(size(), Qt::KeepAspectRatio);
-            painter.drawImage(QRect(QPoint((width() - fit.width()) / 2, (height() - fit.height()) / 2), fit), image);
+            painter.drawImage(QRect(QPoint((width() - fit.width()) / 2, (height() - fit.height()) / 2), fit),
+                              image);
         }
     }
 };

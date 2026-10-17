@@ -73,8 +73,8 @@ Editor::Editor(QWidget *parent) : QMainWindow(parent), render(this) {
             typing |= qobject_cast<QLineEdit *>(w) || qobject_cast<QAbstractSpinBox *>(w) ||
                       qobject_cast<QTextEdit *>(w) || qobject_cast<QPlainTextEdit *>(w) ||
                       (qobject_cast<QComboBox *>(w) && qobject_cast<QComboBox *>(w)->isEditable());
-        splitAction->setShortcuts(typing ? QList<QKeySequence>{QKeySequence("Ctrl+B")} :
-                                          QList<QKeySequence>{QKeySequence("S"), QKeySequence("Ctrl+B")});
+        splitAction->setShortcuts(typing ? QList<QKeySequence>{QKeySequence("Ctrl+B")}
+                                         : QList<QKeySequence>{QKeySequence("S"), QKeySequence("Ctrl+B")});
     });
     action(edit, "Delete selected clip", QKeySequence::Delete, [this] { removeClip(); });
     action(edit, "Add selected media to timeline", QKeySequence("Ctrl+Return"), [this] { addClip(); });
@@ -157,12 +157,11 @@ Editor::Editor(QWidget *parent) : QMainWindow(parent), render(this) {
             return;
         if (!scrub->isSliderDown())
             scrub->setValue(int(ms));
-        position->setText(QString("%1 / %2 s").arg(ms / 1000.0, 0, 'f', 2)
-                             .arg(player.duration() / 1000.0, 0, 'f', 2));
+        position->setText(
+            QString("%1 / %2 s").arg(ms / 1000.0, 0, 'f', 2).arg(player.duration() / 1000.0, 0, 'f', 2));
     });
-    connect(&timelinePlayer, &TimelinePlayer::frameReady, this, [this](const QImage &image) {
-        timelineMonitor->setFrame(image);
-    });
+    connect(&timelinePlayer, &TimelinePlayer::frameReady, this,
+            [this](const QImage &image) { timelineMonitor->setFrame(image); });
     connect(&timelinePlayer, &TimelinePlayer::positionChanged, this, [this](qint64 frame) {
         if (!timelinePlayback)
             return;
@@ -170,8 +169,9 @@ Editor::Editor(QWidget *parent) : QMainWindow(parent), render(this) {
         scrub->setRange(0, int(project.end()));
         if (!scrub->isSliderDown())
             scrub->setValue(int(frame));
-        position->setText(QString("%1 / %2 s").arg(project.rate.us(frame) / 1000000.0, 0, 'f', 2)
-                             .arg(project.rate.us(project.end()) / 1000000.0, 0, 'f', 2));
+        position->setText(QString("%1 / %2 s")
+                              .arg(project.rate.us(frame) / 1000000.0, 0, 'f', 2)
+                              .arg(project.rate.us(project.end()) / 1000000.0, 0, 'f', 2));
         auto *bar = timelineScroll->horizontalScrollBar();
         const int x = timeline->playheadX();
         const int visible = timelineScroll->viewport()->width();
@@ -180,6 +180,11 @@ Editor::Editor(QWidget *parent) : QMainWindow(parent), render(this) {
     });
     connect(&timelinePlayer, &TimelinePlayer::error, this, [this](const QString &message) {
         statusBar()->showMessage("Timeline playback: " + message, 15000);
+    });
+    connect(&timelinePlayer, &TimelinePlayer::bufferingChanged, this, [this](bool buffering) {
+        if (timelinePlayback)
+            previewLabel->setText(buffering ? "LIVE TIMELINE · loading source frames…"
+                                            : "LIVE TIMELINE · Space to play/pause · S / Ctrl+B to split");
     });
     connect(&player, &QMediaPlayer::errorOccurred, this, [this](QMediaPlayer::Error, const QString &s) {
         statusBar()->showMessage("Source playback: " + s, 15000);
@@ -362,7 +367,8 @@ Editor::Editor(QWidget *parent) : QMainWindow(parent), render(this) {
     action(helpMenu, "About", {}, [this] {
         QMessageBox::about(
             this, "Frameforge",
-            "Frameforge 0.2.0 — experimental native Linux editor\nIndependent open-source implementation.\nCPU "
+            "Frameforge 0.2.0 — experimental native Linux editor\nIndependent open-source "
+            "implementation.\nCPU "
             "export and direct timeline playback. Split: S / Ctrl+B.\nFusion, grading, automation and "
             "professional audio are planned.\nNo Mint/GPU compatibility certification yet.");
     });
@@ -708,7 +714,8 @@ void Editor::split() {
         }
     if (!target) {
         for (const auto &clip : project.clips) {
-            if (project.tracks[clip.track].locked || frame <= clip.start || frame >= clip.start + clip.duration)
+            if (project.tracks[clip.track].locked || frame <= clip.start ||
+                frame >= clip.start + clip.duration)
                 continue;
             const bool video = project.tracks[clip.track].kind == "video";
             const bool targetVideo = target && project.tracks[target->track].kind == "video";

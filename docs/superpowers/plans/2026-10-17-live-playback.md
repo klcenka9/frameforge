@@ -58,9 +58,9 @@
 
 **Files:** scripts/install.sh, .github/workflows/build.yml, CMakeLists.txt, README.md, docs, release packaging.
 
-- [ ] Add libav dev dependencies and pkg-config; update runtime package dependencies and direct-playback documentation.
-- [ ] Run all CTest suites, source installer smoke check, clean Release build and package validation.
-- [ ] Fresh review of whole diff; fix important findings with regression tests, rerun suite.
+- [x] Add libav dev dependencies and pkg-config; update runtime package dependencies and direct-playback documentation.
+- [x] Run all CTest suites, source installer smoke check, clean Release build and package validation.
+- [x] Fresh review of whole diff; fix important findings with regression tests, rerun suite.
 - [ ] Publish updated source and built artifacts to the user-authorized repository only after validation; record platform limits accurately.
 
 ## Execution ledger
@@ -71,3 +71,7 @@
 - Tasks 1–3: implementation and regression tests complete. Missing decoder/player interfaces and editor integration tests were observed red; decoder/transport and desktop tests then passed. Additional failing tests caught fractional-frame seek rounding, timestamp-quantized audio jitter, split phase continuity and export channel layout; these passed after corrections.
 - Full-suite checkpoint: `ctest --test-dir /workspace/build-live --output-on-failure` → 5/5 passed, 13.69 seconds. Optional device-clock case → 3/3 Qt Test results passed against PulseAudio null sink.
 - Shared audio rule: use unity-gain summing and hard peak clamp ±0.95 in both paths instead of keeping the old export-only lookahead limiter. This intentionally changes gain/peak behavior for loud overlaps; prevents live/export gain mismatch.
+
+- Final review: fresh-context reviewer found no Critical issues, four Important ones (off-grid sampling parity, multistream policy, video EOF layering, audio-clock stalls). All four reproduced red in dedicated tests and passed after fixes; full suite 5/5, 30.57 seconds. The optional suspended-device case failed before watchdog/reset changes and passed afterwards; private audio tests 4/4, 13.713 seconds.
+- Review minors: design status and task checkboxes were already updated at the checkpoint; no deferred minor findings. Source-player GLib warning remains unresolved, as documented.
+- Additional validation: clean source-installer build/install completed; CPack DEB built and inspected for actual libav dependencies, 0755 directories and no workspace RUNPATH. Initial Ubuntu24/Qt6.4.2 CI 39016160916 passed all suites + virtual audio + X11.

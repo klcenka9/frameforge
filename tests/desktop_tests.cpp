@@ -4,13 +4,13 @@
 #include "ui/media_pool.h"
 #include "ui/theme.h"
 #include "ui/timeline.h"
+#include <QAction>
 #include <QApplication>
 #include <QComboBox>
 #include <QDragEnterEvent>
 #include <QDropEvent>
-#include <QListWidget>
 #include <QLineEdit>
-#include <QAction>
+#include <QListWidget>
 #include <QMimeData>
 #include <QPushButton>
 #include <QScreen>
@@ -298,8 +298,8 @@ class EditorTests : public QObject {
         qputenv("XDG_CONFIG_HOME", dir.path().toUtf8());
         const auto path = dir.filePath("split.mp4");
         QProcess gen;
-        gen.start("ffmpeg", {"-v", "error", "-f", "lavfi", "-i", "color=red:s=160x90:r=25:d=4",
-                             "-c:v", "mpeg4", path});
+        gen.start("ffmpeg",
+                  {"-v", "error", "-f", "lavfi", "-i", "color=red:s=160x90:r=25:d=4", "-c:v", "mpeg4", path});
         QVERIFY(gen.waitForFinished());
         QCOMPARE(gen.exitCode(), 0);
         Editor e;

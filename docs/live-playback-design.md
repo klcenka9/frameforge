@@ -1,6 +1,6 @@
 # Direct timeline playback
 
-Status: approved and implemented for 0.2.0; final validation/review in progress. Replaces the full-file preview used by 0.1.2.
+Status: approved and implemented for 0.2.0; regression tests and independent review completed. Replaces the full-file preview used by 0.1.2.
 
 ## Required behavior
 
@@ -46,7 +46,7 @@ do not assume frame index equals decoder output index for variable-rate inputs.
 At each timeline timestamp, choose visible clips by the same track ordering and
 mute/solo rules as export. Scale/pad to the monitor's preview resolution and
 compose video over black. Decode only needed intervals. Mix audible clips into
-48 kHz stereo PCM with consistent gain/limiting behavior. Gaps produce black and
+48 kHz stereo PCM with unity gain and a hard peak clamp at ±0.95, shared with export. Gaps produce black and
 silence. Trim output at clip boundaries; adjacent split clips retain continuous
 source timestamps.
 
@@ -54,8 +54,10 @@ QAudioSink consumption is the playback clock when an audio device is available.
 Use a monotonic clock when no audio device exists. Pause freezes timeline time;
 resume and seeking reset the clock origin. Bound decoded video queues to a small
 number of frames and audio queues to at most 250 ms. Drop late display frames
-rather than allowing unbounded memory or audio drift. Surface underruns/loading
-without changing timeline timing. Preload the next clip within those limits.
+rather than allowing unbounded memory or audio drift. Surface underruns/loading. If the device clock stops for three seconds, discard
+queued audio and continue with a monotonic silent clock at the last observed
+sample; never jump backward. Pause/Play retries the device. Ordinary decoding
+underruns show loading while the audio clock waits for samples. Preload the next clip within those limits.
 
 Editing while playing pauses at the current timeline frame, invalidates old
 decoded results, and shows the new frame. Space resumes immediately without a

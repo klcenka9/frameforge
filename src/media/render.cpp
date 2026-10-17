@@ -43,13 +43,17 @@ QStringList renderArguments(const Project &p, const QString &out, const QString 
         args << "-threads" << "1" << "-i" << m.path;
         auto tag = QString::number(index);
         if (p.tracks[c.track].kind == "video") {
-            filters << QString("[%1:v:0]trim=start=%2:duration=%3,setpts=PTS-STARTPTS,fps=%4,scale=%5:%6:"
+            // Sample onto the project grid first, holding the last preceding
+            // source frame. Subtract the nominal in-point, not the first frame
+            // retained by trim (which could have a later presentation time).
+            filters << QString("[%1:v:0]fps=%4:round=up,trim=start=%2:duration=%3,setpts=PTS-%8,scale=%5:%6:"
                                "force_original_aspect_ratio=decrease,pad=%5:%6:(ow-iw)/2:(oh-ih)/"
                                "2,setsar=1,format=yuv420p,setpts=PTS+%7/TB[v%1]")
                            .arg(tag, sec(p, c.in), sec(p, c.duration), p.rate.text())
                            .arg(p.width)
                            .arg(p.height)
-                           .arg(sec(p, c.start));
+                           .arg(sec(p, c.start))
+                           .arg(c.in);
             auto next = "mix" + tag;
             filters << QString(
                            "[%1][v%2]overlay=eof_action=pass:repeatlast=0:enable='gte(t,%3)*lt(t,%4)'[%5]")
@@ -57,7 +61,7 @@ QStringList renderArguments(const Project &p, const QString &out, const QString 
             video = next;
         }
         if (m.audio) {
-            filters << QString("[%1:a:0]atrim=start=%2:duration=%3,asetpts=PTS-STARTPTS,aresample=48000,"
+            filters << QString("[%1:a:0]atrim=start=%2:duration=%3,asetpts=PTS-%2/TB,aresample=48000,"
                                "aformat=channel_layouts=stereo,adelay=%4S:all=1[a%1]")
                            .arg(tag, sec(p, c.in), sec(p, c.duration))
                            .arg(c.start * 48000LL * p.rate.den / p.rate.num);

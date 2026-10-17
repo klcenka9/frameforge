@@ -30,5 +30,5 @@ for attempt in {1..50}; do
   if ! kill -0 "$audio_pid" 2>/dev/null; then cat "$runtime_dir/server.log"; exit 1; fi
   sleep 0.1
 done
-PULSE_SERVER="unix:$runtime_dir/native" FRAMEFORGE_TEST_AUDIO=1 G_DEBUG=fatal-criticals \
-  "$build_dir/playback_tests" audioDevicePlayback
+PULSE_SERVER="unix:$runtime_dir/native" FRAMEFORGE_TEST_AUDIO=1 FRAMEFORGE_TEST_AUDIO_CONTROL=1 G_DEBUG=fatal-criticals \
+  "$build_dir/playback_tests" audioDevicePlayback suspendedAudioDeviceContinuesMonotonically

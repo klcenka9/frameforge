@@ -61,8 +61,8 @@ class Stream {
     }
     void seek(qint64 us) {
         ensureActive();
-        const auto stamp = av_rescale_q(std::max(qint64(0), us) + originUs,
-                                       AVRational{1, 1000000}, format->streams[index]->time_base);
+        const auto stamp = av_rescale_q(std::max(qint64(0), us) + originUs, AVRational{1, 1000000},
+                                        format->streams[index]->time_base);
         check(av_seek_frame(format, index, stamp, AVSEEK_FLAG_BACKWARD), "Seek source");
         avcodec_flush_buffers(codec);
         av_packet_unref(packet);
@@ -126,9 +126,9 @@ class Stream {
         }
         if (!resample) {
             AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO;
-            check(swr_alloc_set_opts2(&resample, &stereo, AV_SAMPLE_FMT_FLT, 48000,
-                                     &decoded->ch_layout, AVSampleFormat(decoded->format),
-                                     decoded->sample_rate, 0, nullptr), "Configure audio resampler");
+            check(swr_alloc_set_opts2(&resample, &stereo, AV_SAMPLE_FMT_FLT, 48000, &decoded->ch_layout,
+                                      AVSampleFormat(decoded->format), decoded->sample_rate, 0, nullptr),
+                  "Configure audio resampler");
             check(swr_init(resample), "Start audio resampler");
         }
         const auto delay = swr_get_delay(resample, decoded->sample_rate);
@@ -142,20 +142,22 @@ class Stream {
             stamp = audioNext;
         audioStart = stamp;
         audioContinuous = true;
-        const int capacity = int(av_rescale_rnd(delay + decoded->nb_samples, 48000,
-                                               decoded->sample_rate, AV_ROUND_UP)) + 32;
+        const int capacity =
+            int(av_rescale_rnd(delay + decoded->nb_samples, 48000, decoded->sample_rate, AV_ROUND_UP)) + 32;
         audioData.resize(size_t(capacity) * 2);
         auto *out = reinterpret_cast<uint8_t *>(audioData.data());
-        const int count = swr_convert(resample, &out, capacity,
-                                      const_cast<const uint8_t **>(decoded->extended_data),
-                                      decoded->nb_samples);
+        const int count =
+            swr_convert(resample, &out, capacity, const_cast<const uint8_t **>(decoded->extended_data),
+                        decoded->nb_samples);
         check(count, "Resample audio");
         audioData.resize(size_t(count) * 2);
         audioNext = audioStart + count;
         return true;
     }
+
   public:
-    Stream(const QString &path, AVMediaType type, std::function<bool()> cancel) : cancelled(std::move(cancel)) {
+    Stream(const QString &path, AVMediaType type, std::function<bool()> cancel)
+        : cancelled(std::move(cancel)) {
         try {
             ensureActive();
             if (!QFileInfo(path).isFile())
@@ -164,14 +166,22 @@ class Stream {
             if (!format)
                 throw Error("Cannot allocate source decoder");
             format->interrupt_callback = {[](void *opaque) {
-                auto *self = static_cast<Stream *>(opaque);
-                return self->cancelled && self->cancelled() ? 1 : 0;
-            }, this};
+                                              auto *self = static_cast<Stream *>(opaque);
+                                              return self->cancelled && self->cancelled() ? 1 : 0;
+                                          },
+                                          this};
             check(avformat_open_input(&format, QFile::encodeName(path).constData(), nullptr, nullptr),
                   "Open source");
             check(avformat_find_stream_info(format, nullptr), "Inspect source");
-            index = av_find_best_stream(format, type, -1, -1, nullptr, 0);
-            check(index, "Find source stream");
+            // Explicit export maps v:0 / a:0. Default/language dispositions
+            // must not silently select a different stream in the preview.
+            for (unsigned int i = 0; i < format->nb_streams; ++i)
+                if (format->streams[i]->codecpar->codec_type == type) {
+                    index = int(i);
+                    break;
+                }
+            if (index < 0)
+                throw Error("Source has no requested stream");
             originUs = format->start_time == AV_NOPTS_VALUE ? 0 : format->start_time;
             const AVCodec *decoder = avcodec_find_decoder(format->streams[index]->codecpar->codec_id);
             if (!decoder)
@@ -192,7 +202,9 @@ class Stream {
             throw;
         }
     }
-    ~Stream() { cleanup(); }
+    ~Stream() {
+        cleanup();
+    }
     QImage video(qint64 us, QSize size) {
         if (lastVideo < 0 || us < lastVideo || us - lastVideo > 1000000)
             seek(us);
@@ -213,6 +225,21 @@ class Stream {
         }
         if (!previous)
             return {};
+        if (eof) {
+#if LIBAVUTIL_VERSION_MAJOR >= 58
+            auto duration = previous->duration;
+#else
+            auto duration = previous->pkt_duration;
+#endif
+            qint64 durationUs =
+                av_rescale_q(duration, format->streams[index]->time_base, AVRational{1, 1000000});
+            if (durationUs <= 0) {
+                const auto rate = av_guess_frame_rate(format, format->streams[index], previous);
+                durationUs = rate.num > 0 ? av_rescale_q(1, av_inv_q(rate), AVRational{1, 1000000}) : 0;
+            }
+            if (us >= timestamp(previous) + durationUs)
+                return {}; // No repeat-last at EOF: expose the lower layer.
+        }
         const auto sar = av_guess_sample_aspect_ratio(format, format->streams[index], previous);
         const double aspect = double(previous->width) / previous->height * (sar.num > 0 ? av_q2d(sar) : 1);
         QSize fit(size.width(), std::max(1, int(std::round(size.width() / aspect))));
@@ -220,8 +247,8 @@ class Stream {
             fit = {std::max(1, int(std::round(size.height() * aspect))), size.height()};
         QImage image(fit, QImage::Format_RGBA8888);
         scale = sws_getCachedContext(scale, previous->width, previous->height,
-                                    AVPixelFormat(previous->format), fit.width(), fit.height(),
-                                    AV_PIX_FMT_RGBA, SWS_BILINEAR, nullptr, nullptr, nullptr);
+                                     AVPixelFormat(previous->format), fit.width(), fit.height(),
+                                     AV_PIX_FMT_RGBA, SWS_BILINEAR, nullptr, nullptr, nullptr);
         if (!scale || image.isNull())
             throw Error("Cannot convert source frame");
         uint8_t *dest[] = {image.bits(), nullptr, nullptr, nullptr};
@@ -293,12 +320,13 @@ struct TimelineDecoder::Impl {
 TimelineDecoder::TimelineDecoder(Project project, QSize size, std::function<bool()> cancelled)
     : impl(std::make_unique<Impl>()) {
     project.validate();
-    impl->size = QSize(project.width, project.height).scaled(size.boundedTo({1920, 1080}).expandedTo({16, 16}),
-                                                           Qt::KeepAspectRatio);
+    impl->size = QSize(project.width, project.height)
+                     .scaled(size.boundedTo({1920, 1080}).expandedTo({16, 16}), Qt::KeepAspectRatio);
     impl->project = std::move(project);
-    std::stable_sort(impl->project.clips.begin(), impl->project.clips.end(), [](const Clip &a, const Clip &b) {
-        return a.track == b.track ? a.start < b.start : a.track < b.track;
-    });
+    std::stable_sort(impl->project.clips.begin(), impl->project.clips.end(),
+                     [](const Clip &a, const Clip &b) {
+                         return a.track == b.track ? a.start < b.start : a.track < b.track;
+                     });
     impl->cancelled = std::move(cancelled);
 }
 TimelineDecoder::~TimelineDecoder() = default;
@@ -307,23 +335,26 @@ QImage TimelineDecoder::video(qint64 frame) {
     d.checkCancelled();
     QImage image(d.size, QImage::Format_RGBA8888);
     image.fill(Qt::black);
-    // Every video layer is opaque and letterboxed, as in the export graph.
-    const Clip *top = nullptr;
-    for (const auto &clip : d.project.clips)
+    // Video layers are opaque, but an exhausted stream reveals lower layers.
+    // Visit top-to-bottom and retain only the decoders that were needed.
+    QSet<QString> active;
+    for (auto it = d.project.clips.crbegin(); it != d.project.clips.crend(); ++it) {
+        const auto &clip = *it;
         if (d.project.tracks[clip.track].kind == "video" && d.project.audibleTrack(clip.track) &&
-            frame >= clip.start && frame < clip.start + clip.duration && (!top || clip.track > top->track))
-            top = &clip;
-    if (top) {
-        auto source = d.stream(d.videos, *top, AVMEDIA_TYPE_VIDEO)
-                          .video(d.project.rate.us(top->in + frame - top->start), d.size);
-        if (!source.isNull()) {
-            QPainter painter(&image);
-            painter.drawImage((image.width() - source.width()) / 2,
-                              (image.height() - source.height()) / 2, source);
+            frame >= clip.start && frame < clip.start + clip.duration) {
+            active.insert(clip.id);
+            auto source = d.stream(d.videos, clip, AVMEDIA_TYPE_VIDEO)
+                              .video(d.project.rate.us(clip.in + frame - clip.start), d.size);
+            if (!source.isNull()) {
+                QPainter painter(&image);
+                painter.drawImage((image.width() - source.width()) / 2,
+                                  (image.height() - source.height()) / 2, source);
+                break;
+            }
         }
     }
     for (auto it = d.videos.begin(); it != d.videos.end();)
-        it = !top || it->first != top->id ? d.videos.erase(it) : std::next(it);
+        it = !active.contains(it->first) ? d.videos.erase(it) : std::next(it);
     return image;
 }
 QByteArray TimelineDecoder::audio(qint64 startSample, int samples) {

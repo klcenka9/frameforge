@@ -56,11 +56,13 @@ struct TimelinePlayer::Impl {
     QAudioDevice device = QMediaDevices::defaultAudioOutput();
     std::unique_ptr<QAudioSink> sink;
     QIODevice *audioPort = nullptr;
-    bool integerAudio = false, playing = false, clockStarted = false, outstanding = false;
+    bool integerAudio = false, playing = false, clockStarted = false, outstanding = false, buffering = false;
     qint64 currentFrame = 0, displayedFrame = -1, originSample = 0, nextSample = 0, bufferedEnd = 0;
     QByteArray pcm;
     std::deque<Picture> pictures;
     QElapsedTimer clock;
+    QElapsedTimer audioProgress;
+    qint64 lastClockSample = 0;
     QTimer timer;
     std::atomic<quint64> generation{0};
     std::atomic_bool shutdown{false};
@@ -87,9 +89,28 @@ struct TimelinePlayer::Impl {
         audioPort = nullptr;
         if (sink) {
             QObject::disconnect(sink.get(), nullptr, owner, nullptr);
-            sink->stop();
+            // reset discards queued samples. stop may drain a suspended
+            // backend and block the GUI during pause/seek/device fallback.
+            sink->reset();
             sink.reset();
         }
+    }
+    void setBuffering(bool value) {
+        if (value != buffering) {
+            buffering = value;
+            emit owner->bufferingChanged(value);
+        }
+    }
+    void silentFallback(const QString &reason) {
+        // A stopped backend may already have reset processedUSecs(). Preserve
+        // the last observed sample instead of reading its reset clock again.
+        const auto at = lastClockSample;
+        stopAudio();
+        originSample = at;
+        clock.restart();
+        pcm.clear(); // Never replay obsolete audio if the device recovers.
+        setBuffering(false);
+        emit owner->error(reason + "; continuing silent preview. Pause/Play retries audio.");
     }
     void clear() {
         ++generation;
@@ -103,14 +124,16 @@ struct TimelinePlayer::Impl {
         pcm.clear();
         pictures.clear();
         clockStarted = false;
+        setBuffering(false);
         displayedFrame = -1;
         originSample = nextSample = bufferedEnd = sampleAt(project.rate, currentFrame);
+        lastClockSample = originSample;
     }
     void submit(bool still) {
         if (outstanding || shutdown)
             return;
-        const auto end = still ? nextSample : std::min(sampleAt(project.rate, project.end()),
-                                                      nextSample + blockSamples);
+        const auto end =
+            still ? nextSample : std::min(sampleAt(project.rate, project.end()), nextSample + blockSamples);
         if (!still && end <= nextSample)
             return;
         Request next{project, size, generation.load(), nextSample, end, still};
@@ -140,8 +163,10 @@ struct TimelinePlayer::Impl {
             Result result{r.generation, r.end, r.still, {}, {}, {}};
             try {
                 if (!decoder || decoderGeneration != r.generation) {
-                    decoder = std::make_unique<TimelineDecoder>(r.project, r.size,
-                        [this, token = r.generation] { return shutdown || generation != token; });
+                    decoder =
+                        std::make_unique<TimelineDecoder>(r.project, r.size, [this, token = r.generation] {
+                            return shutdown || generation != token;
+                        });
                     decoderGeneration = r.generation;
                 }
                 const auto first = frameAt(r.project.rate, r.sample);
@@ -158,9 +183,9 @@ struct TimelinePlayer::Impl {
             }
             if (shutdown || r.generation != generation)
                 continue;
-            QMetaObject::invokeMethod(owner, [this, result = std::move(result)]() mutable {
-                deliver(std::move(result));
-            }, Qt::QueuedConnection);
+            QMetaObject::invokeMethod(
+                owner, [this, result = std::move(result)]() mutable { deliver(std::move(result)); },
+                Qt::QueuedConnection);
         }
     }
     void startAudio() {
@@ -192,12 +217,7 @@ struct TimelinePlayer::Impl {
                 QTimer::singleShot(0, owner, [this, token = generation.load()] {
                     if (token != generation || !sink)
                         return;
-                    const auto now = positionSample();
-                    stopAudio();
-                    originSample = now;
-                    clock.restart();
-                    pcm.clear();
-                    emit owner->error("Audio device disconnected; continuing silent preview");
+                    silentFallback("Audio device disconnected");
                 });
             }
         });
@@ -221,6 +241,7 @@ struct TimelinePlayer::Impl {
             return;
         }
         if (result.still) {
+            setBuffering(false);
             if (!result.pictures.empty())
                 emit owner->frameReady(result.pictures.front().image);
             return;
@@ -232,6 +253,7 @@ struct TimelinePlayer::Impl {
         if (!clockStarted) {
             startAudio();
             clock.restart();
+            audioProgress.start();
             clockStarted = true;
             timer.start();
         }
@@ -262,7 +284,17 @@ struct TimelinePlayer::Impl {
             }
         }
         const auto end = sampleAt(project.rate, project.end());
-        const auto now = std::min(positionSample(), end);
+        auto now = std::min(std::max(positionSample(), lastClockSample), end);
+        if (sink) {
+            if (now > lastClockSample)
+                audioProgress.restart();
+            else if (audioProgress.elapsed() > 3000) {
+                silentFallback("Audio clock stalled");
+                now = std::min(positionSample(), end);
+            }
+        }
+        lastClockSample = now;
+        setBuffering(sink ? sink->state() == QAudio::IdleState : bufferedEnd <= now && nextSample < end);
         const auto frame = std::min(frameAt(project.rate, now), project.end());
         // Present the latest available frame; late display frames are discarded.
         std::optional<Picture> shown;
@@ -271,6 +303,7 @@ struct TimelinePlayer::Impl {
             pictures.pop_front();
         }
         if (shown && shown->frame != displayedFrame) {
+            setBuffering(false);
             displayedFrame = shown->frame;
             emit owner->frameReady(shown->image);
         }
@@ -327,6 +360,7 @@ void TimelinePlayer::play() {
         impl->currentFrame = 0;
     impl->clear();
     impl->playing = true;
+    impl->setBuffering(true);
     emit playingChanged(true);
     impl->submit(false);
 }
@@ -344,8 +378,13 @@ void TimelinePlayer::seek(qint64 frame) {
     impl->clear();
     emit positionChanged(impl->currentFrame);
     emit playingChanged(false);
+    impl->setBuffering(true);
     impl->submit(true);
 }
-qint64 TimelinePlayer::frame() const { return impl->currentFrame; }
-bool TimelinePlayer::isPlaying() const { return impl->playing; }
+qint64 TimelinePlayer::frame() const {
+    return impl->currentFrame;
+}
+bool TimelinePlayer::isPlaying() const {
+    return impl->playing;
+}
 } // namespace ff

@@ -14,6 +14,7 @@ class TimelineDecoder {
     QImage video(qint64 frame);
     // Stereo interleaved float PCM, 48 kHz. Sample offsets are on the timeline.
     QByteArray audio(qint64 startSample, int samples);
+
   private:
     struct Impl;
     std::unique_ptr<Impl> impl;

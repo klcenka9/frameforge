@@ -23,8 +23,10 @@ class TimelinePlayer : public QObject {
     void frameReady(const QImage &image);
     void positionChanged(qint64 frame);
     void playingChanged(bool playing);
+    void bufferingChanged(bool buffering);
     void ended();
     void error(const QString &message);
+
   private:
     struct Impl;
     std::unique_ptr<Impl> impl;

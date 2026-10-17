@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "media/media.h"
+#include "media/render.h"
 #include "media/timeline_decoder.h"
 #include "media/timeline_player.h"
-#include "media/render.h"
 #include <QFile>
-#include <QProcess>
 #include <QMediaDevices>
+#include <QProcess>
 #include <QTemporaryDir>
 #include <QtTest>
 #include <cmath>
@@ -31,15 +31,93 @@ class PlaybackTests : public QObject {
         }
         return pcm.isEmpty() ? 0 : std::sqrt(sum / (pcm.size() / 4));
     }
+    QByteArray exportPixel(const Project &p, int frame) {
+        QTemporaryDir output;
+        RenderJob job;
+        QSignalSpy finished(&job, &RenderJob::finished);
+        const auto path = output.filePath("comparison.mp4");
+        job.start(p, path);
+        if (!finished.wait(15000) || !finished[0][0].toBool())
+            return {};
+        QProcess pixel;
+        pixel.start("ffmpeg",
+                    {"-v", "error", "-ss", QString::number(p.rate.us(frame) / 1000000.0, 'f', 9), "-i", path,
+                     "-frames:v", "1", "-vf", "scale=1:1", "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"});
+        if (!pixel.waitForFinished(10000) || pixel.exitCode())
+            return {};
+        return pixel.readAllStandardOutput();
+    }
+    Media multipleStreams() {
+        const auto path = dir.filePath("multiple.mkv");
+        if (!QFile::exists(path)) {
+            QProcess gen;
+            gen.start("ffmpeg", {"-v",
+                                 "error",
+                                 "-i",
+                                 source.path,
+                                 "-f",
+                                 "lavfi",
+                                 "-i",
+                                 "color=blue:s=160x90:r=25:d=4",
+                                 "-f",
+                                 "lavfi",
+                                 "-i",
+                                 "sine=frequency=880:sample_rate=48000:duration=4",
+                                 "-map",
+                                 "0:v",
+                                 "-map",
+                                 "1:v",
+                                 "-map",
+                                 "0:a",
+                                 "-map",
+                                 "2:a",
+                                 "-c:v",
+                                 "ffv1",
+                                 "-c:a",
+                                 "pcm_f32le",
+                                 "-disposition:v:0",
+                                 "0",
+                                 "-disposition:v:1",
+                                 "default",
+                                 "-disposition:a:0",
+                                 "0",
+                                 "-disposition:a:1",
+                                 "default",
+                                 path});
+            if (!gen.waitForFinished(10000) || gen.exitCode())
+                return {};
+        }
+        return probe(path);
+    }
   private slots:
     void initTestCase() {
         const auto path = dir.filePath("red then blue ü.mkv");
         QProcess gen;
-        gen.start("ffmpeg", {"-v", "error", "-f", "lavfi", "-i", "color=red:s=160x90:r=25:d=2",
-                  "-f", "lavfi", "-i", "color=blue:s=160x90:r=25:d=2", "-f", "lavfi", "-i",
-                  "sine=frequency=440:sample_rate=48000:duration=4", "-filter_complex",
-                  "[0:v][1:v]concat=n=2:v=1:a=0[v]", "-map", "[v]", "-map", "2:a",
-                  "-c:v", "ffv1", "-c:a", "pcm_f32le", path});
+        gen.start("ffmpeg", {"-v",
+                             "error",
+                             "-f",
+                             "lavfi",
+                             "-i",
+                             "color=red:s=160x90:r=25:d=2",
+                             "-f",
+                             "lavfi",
+                             "-i",
+                             "color=blue:s=160x90:r=25:d=2",
+                             "-f",
+                             "lavfi",
+                             "-i",
+                             "sine=frequency=440:sample_rate=48000:duration=4",
+                             "-filter_complex",
+                             "[0:v][1:v]concat=n=2:v=1:a=0[v]",
+                             "-map",
+                             "[v]",
+                             "-map",
+                             "2:a",
+                             "-c:v",
+                             "ffv1",
+                             "-c:a",
+                             "pcm_f32le",
+                             path});
         QVERIFY(gen.waitForFinished(15000));
         QVERIFY2(gen.exitCode() == 0, gen.readAllStandardError().constData());
         source = probe(path);
@@ -144,7 +222,8 @@ class PlaybackTests : public QObject {
         QCOMPARE(player.frame(), paused);
         player.seek(70);
         QTRY_VERIFY_WITH_TIMEOUT(!frames.isEmpty() &&
-            qvariant_cast<QImage>(frames.last()[0]).pixelColor(80, 45).blue() > 220, 3000);
+                                     qvariant_cast<QImage>(frames.last()[0]).pixelColor(80, 45).blue() > 220,
+                                 3000);
         QCOMPARE(player.frame(), qint64(70));
         frames.clear();
         player.seek(55);
@@ -192,8 +271,8 @@ class PlaybackTests : public QObject {
         const auto variable = dir.filePath("variable.mkv");
         QProcess gen;
         gen.start("ffmpeg", {"-v", "error", "-i", source.path, "-an", "-vf",
-            "setpts=if(lt(N\\,50)\\,N/(10*TB)\\,(5+(N-50)/50)/TB)",
-            "-fps_mode", "vfr", "-c:v", "ffv1", "-output_ts_offset", "7", variable});
+                             "setpts=if(lt(N\\,50)\\,N/(10*TB)\\,(5+(N-50)/50)/TB)", "-fps_mode", "vfr",
+                             "-c:v", "ffv1", "-output_ts_offset", "7", variable});
         QVERIFY(gen.waitForFinished(10000));
         QVERIFY2(gen.exitCode() == 0, gen.readAllStandardError().constData());
         p.media = {probe(variable)};
@@ -239,7 +318,8 @@ class PlaybackTests : public QObject {
     void previewMatchesExport() {
         QTemporaryDir out;
         auto p = fixture();
-        p.clips = {{"bottom", source.id, 0, 0, 0, 50}, {"top", source.id, 1, 10, 50, 20},
+        p.clips = {{"bottom", source.id, 0, 0, 0, 50},
+                   {"top", source.id, 1, 10, 50, 20},
                    {"audio", source.id, 2, 5, 10, 40}};
         RenderJob job;
         QSignalSpy rendered(&job, &RenderJob::finished);
@@ -250,8 +330,9 @@ class PlaybackTests : public QObject {
         TimelineDecoder decoder(p, {160, 90});
         for (int frame : {0, 8, 15, 35, 48}) {
             QProcess ffmpeg;
-            ffmpeg.start("ffmpeg", {"-v", "error", "-ss", QString::number(frame / 25.0), "-i", path,
-                "-frames:v", "1", "-vf", "scale=1:1", "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"});
+            ffmpeg.start("ffmpeg",
+                         {"-v", "error", "-ss", QString::number(frame / 25.0), "-i", path, "-frames:v", "1",
+                          "-vf", "scale=1:1", "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"});
             QVERIFY(ffmpeg.waitForFinished());
             QCOMPARE(ffmpeg.exitCode(), 0);
             const auto pixel = ffmpeg.readAllStandardOutput();
@@ -261,8 +342,8 @@ class PlaybackTests : public QObject {
             QVERIFY(std::abs(actual.blue() - quint8(pixel[2])) < 15);
         }
         QProcess audio;
-        audio.start("ffmpeg", {"-v", "error", "-ss", "0.6", "-i", path, "-t", "0.08", "-vn", "-ar",
-            "48000", "-ac", "2", "-f", "f32le", "pipe:1"});
+        audio.start("ffmpeg", {"-v", "error", "-ss", "0.6", "-i", path, "-t", "0.08", "-vn", "-ar", "48000",
+                               "-ac", "2", "-f", "f32le", "pipe:1"});
         QVERIFY(audio.waitForFinished());
         QCOMPARE(audio.exitCode(), 0);
         const auto reference = audio.readAllStandardOutput();
@@ -294,6 +375,101 @@ class PlaybackTests : public QObject {
         QTRY_VERIFY_WITH_TIMEOUT(!ended.isEmpty(), 3000);
         QCOMPARE(player.frame(), qint64(100));
         QVERIFY2(errors.isEmpty(), errors.isEmpty() ? "" : qPrintable(errors[0][0].toString()));
+    }
+    void offGridTrimMatchesExport() {
+        const auto path = dir.filePath("ten-fps.mkv");
+        QProcess gen;
+        gen.start("ffmpeg", {"-v", "error", "-f", "lavfi", "-i", "color=red:s=160x90:r=10:d=0.1", "-f",
+                             "lavfi", "-i", "color=blue:s=160x90:r=10:d=0.4", "-filter_complex",
+                             "[0:v][1:v]concat=n=2:v=1:a=0[v]", "-map", "[v]", "-c:v", "ffv1", path});
+        QVERIFY(gen.waitForFinished(10000));
+        QVERIFY2(gen.exitCode() == 0, gen.readAllStandardError().constData());
+        auto p = fixture();
+        p.media = {probe(path)};
+        p.clips = {{"trim", p.media[0].id, 0, 0, 1, 8}};
+        TimelineDecoder decoder(p, {160, 90});
+        for (int frame : {0, 1, 2, 4}) {
+            const auto pixel = exportPixel(p, frame);
+            QCOMPARE(pixel.size(), 3);
+            const auto actual = decoder.video(frame).pixelColor(80, 45);
+            QVERIFY2(std::abs(actual.red() - quint8(pixel[0])) < 15, qPrintable(QString::number(frame)));
+            QVERIFY(std::abs(actual.blue() - quint8(pixel[2])) < 15);
+        }
+    }
+    void firstVideoStreamMatchesExport() {
+        auto p = fixture();
+        p.media = {multipleStreams()};
+        QVERIFY(!p.media[0].id.isEmpty());
+        p.clips = {{"multi", p.media[0].id, 0, 0, 0, 25}};
+        TimelineDecoder decoder(p, {160, 90});
+        const auto pixel = exportPixel(p, 5);
+        QCOMPARE(pixel.size(), 3);
+        QVERIFY(decoder.video(5).pixelColor(80, 45).red() > 220);
+        QVERIFY(quint8(pixel[0]) > 220);
+    }
+    void firstAudioStreamMatchesExport() {
+        auto p = fixture();
+        p.media = {multipleStreams()};
+        QVERIFY(!p.media[0].id.isEmpty());
+        p.clips = {{"multi", p.media[0].id, 0, 0, 0, 25}};
+        TimelineDecoder decoder(p, {160, 90});
+        const auto pcm = decoder.audio(24000, 4800);
+        int positiveCrossings = 0;
+        float before = 0;
+        for (int i = 0; i < 4800; ++i) {
+            float sample;
+            std::memcpy(&sample, pcm.constData() + i * 8, 4);
+            if (before < 0 && sample >= 0)
+                ++positiveCrossings;
+            before = sample;
+        }
+        QVERIFY2(positiveCrossings >= 43 && positiveCrossings <= 45,
+                 qPrintable(QString::number(positiveCrossings))); // 440 Hz, not the default 880 Hz stream.
+    }
+    void exhaustedVideoLayerRevealsLowerTrack() {
+        const auto path = dir.filePath("short-video.mkv");
+        QProcess gen;
+        gen.start("ffmpeg",
+                  {"-v", "error", "-f", "lavfi", "-i", "color=red:s=160x90:r=25:d=1", "-f", "lavfi", "-i",
+                   "sine=sample_rate=48000:duration=2", "-c:v", "ffv1", "-c:a", "pcm_f32le", path});
+        QVERIFY(gen.waitForFinished(10000));
+        QCOMPARE(gen.exitCode(), 0);
+        auto p = fixture();
+        const auto top = probe(path);
+        p.media.append(top);
+        p.clips = {{"bottom", source.id, 0, 0, 50, 50}, {"top", top.id, 1, 0, 0, 50}};
+        TimelineDecoder decoder(p, {160, 90});
+        QVERIFY(decoder.video(10).pixelColor(80, 45).red() > 220);
+        const auto pixel = exportPixel(p, 35);
+        QCOMPARE(pixel.size(), 3);
+        QVERIFY(quint8(pixel[2]) > 220);
+        QVERIFY(decoder.video(35).pixelColor(80, 45).blue() > 220);
+    }
+    void suspendedAudioDeviceContinuesMonotonically() {
+        if (!qEnvironmentVariableIsSet("FRAMEFORGE_TEST_AUDIO_CONTROL"))
+            QSKIP("Requires the private virtual sink managed by test-audio.sh");
+        auto p = fixture();
+        p.clips = {{"whole", source.id, 0, 0, 0, 100}};
+        TimelinePlayer player;
+        player.setProject(p);
+        player.play();
+        QTRY_VERIFY_WITH_TIMEOUT(player.frame() >= 10, 3000);
+        const auto before = player.frame();
+        QSignalSpy positions(&player, &TimelinePlayer::positionChanged);
+        QProcess control;
+        auto binary = qEnvironmentVariable("FRAMEFORGE_PACTL_BINARY", "pactl");
+        control.start(binary, {"--server=" + qEnvironmentVariable("PULSE_SERVER"), "suspend-sink",
+                               "frameforge_test", "true"});
+        QVERIFY(control.waitForFinished(3000));
+        QCOMPARE(control.exitCode(), 0);
+        QTRY_VERIFY_WITH_TIMEOUT(player.frame() >= before + 20, 6000);
+        for (const auto &position : positions)
+            QVERIFY(position[0].toLongLong() >= before);
+        player.pause();
+        control.start(binary, {"--server=" + qEnvironmentVariable("PULSE_SERVER"), "suspend-sink",
+                               "frameforge_test", "false"});
+        QVERIFY(control.waitForFinished(3000));
+        QCOMPARE(control.exitCode(), 0);
     }
 };
 QTEST_GUILESS_MAIN(PlaybackTests)
