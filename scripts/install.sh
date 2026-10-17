@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 set -euo pipefail
 repo="klcenka9/frameforge"
-version="0.1.2"
+version="0.2.0"
 prefix="${HOME}/.local"
 source_dir=""
 install_dependencies=true
@@ -15,7 +15,7 @@ while [[ $# -gt 0 ]]; do
 Frameforge source installer (Debian / Ubuntu / Linux Mint)
 Usage: bash install.sh [--prefix /absolute/path] [--no-deps] [--source /local/checkout]
 Default: install distribution build dependencies through sudo apt-get, download
-v0.1.2, build as your current user and install under $HOME/.local.
+v0.2.0, build as your current user and install under $HOME/.local.
 Requires Qt >= 6.4 (target: Mint 22+, Ubuntu 24.04+, Debian 12+).
 --no-deps skips apt when dependencies are already installed.
 No proprietary drivers or bundled multimedia codecs are installed.
@@ -39,9 +39,9 @@ if $install_dependencies; then
     echo 'Qt 6.4+ is required. Use Mint 22+, Ubuntu 24.04+ or Debian 12+, or provide a compatible Qt SDK with --no-deps.' >&2
     exit 1
   fi
-  sudo apt-get install -y build-essential cmake qt6-base-dev qt6-multimedia-dev libgl-dev ffmpeg gstreamer1.0-plugins-good gstreamer1.0-libav curl ca-certificates
+  sudo apt-get install -y build-essential cmake pkg-config libavformat-dev libavcodec-dev libavutil-dev libswscale-dev libswresample-dev qt6-base-dev qt6-multimedia-dev libgl-dev ffmpeg gstreamer1.0-plugins-good gstreamer1.0-libav curl ca-certificates
 fi
-for tool in cmake c++ ffmpeg ffprobe; do
+for tool in cmake c++ pkg-config ffmpeg ffprobe; do
   command -v "$tool" >/dev/null || { echo "Missing dependency: $tool" >&2; exit 1; }
 done
 work_dir="$(mktemp -d -t frameforge-install.XXXXXXXX)"
@@ -64,4 +64,4 @@ cmake -S "$source_dir" -B "$work_dir/build" -DCMAKE_BUILD_TYPE=Release \
 cmake --build "$work_dir/build" --parallel "$jobs"
 cmake --install "$work_dir/build"
 printf '\nInstalled. Launch in a graphical session:\n  "%s/bin/frameforge"\n' "$prefix"
-echo 'This is an experimental editor. Timeline previews require a background render.'
+echo 'This is an experimental editor. Space plays the timeline directly. Split: S or Ctrl+B. Use Deliver for final export.'

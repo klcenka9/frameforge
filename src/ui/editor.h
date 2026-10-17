@@ -2,12 +2,12 @@
 #pragma once
 #include "core/project.h"
 #include "media/render.h"
+#include "media/timeline_player.h"
 #include <QAudioOutput>
 #include <QHash>
 #include <QImage>
 #include <QMainWindow>
 #include <QMediaPlayer>
-#include <QTemporaryDir>
 #include <QTimer>
 #include <QUndoStack>
 #include <functional>
@@ -21,9 +21,11 @@ class QSlider;
 class QScrollArea;
 class QVideoWidget;
 class QAction;
+class QStackedWidget;
 namespace ff {
 class Timeline;
 class MediaPool;
+class VideoMonitor;
 class Editor : public QMainWindow {
     Q_OBJECT
   public:
@@ -43,9 +45,8 @@ class Editor : public QMainWindow {
     QUndoStack history;
     QString projectPath, selection;
     quint64 epoch = 0;
-    bool timelinePlayback = false, previewValid = false, previewRender = false;
-    QTemporaryDir previewDirectory;
-    QString previewPath;
+    bool timelinePlayback = false;
+    TimelinePlayer timelinePlayer;
     QHash<QString, QImage> thumbnails;
     QMediaPlayer player;
     QAudioOutput audio;
@@ -53,7 +54,8 @@ class Editor : public QMainWindow {
     QTimer autosave;
     MediaPool *pool;
     QScrollArea *timelineScroll;
-    qint64 pendingPreviewFrame = -1;
+    QStackedWidget *viewer;
+    VideoMonitor *timelineMonitor;
     QLabel *metadata, *position, *previewLabel, *exportInfo;
     Timeline *timeline;
     QSpinBox *clipIn, *clipDuration, *clipStart;
@@ -69,7 +71,6 @@ class Editor : public QMainWindow {
     void importDroppedFiles(const QStringList &, int track = -1, qint64 frame = 0);
     void playTimeline();
     void playSource();
-    void loadTimelinePreview();
     void importPath(const QString &path, const QString &relinkId = {});
     void sourceSelected();
     void addClip();
@@ -79,7 +80,7 @@ class Editor : public QMainWindow {
     void open();
     void newProject();
     bool canDiscard();
-    void renderTimeline(bool exporting);
+    void renderTimeline();
     void settings();
     void error(const QString &message);
     void recover();

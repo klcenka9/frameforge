@@ -4,6 +4,7 @@
 #include "media_drop.h"
 #include "media_pool.h"
 #include "timeline.h"
+#include "video_monitor.h"
 #include <QFutureWatcher>
 #include <QSettings>
 #include <QStandardPaths>
@@ -63,14 +64,25 @@ Editor::Editor(QWidget *parent) : QMainWindow(parent), render(this) {
     auto *redo = history.createRedoAction(this, "Redo");
     redo->setShortcut(QKeySequence::Redo);
     edit->addAction(redo);
-    action(edit, "Split at playhead", QKeySequence("Ctrl+B"), [this] { split(); });
+    auto *splitAction = action(edit, "Split (S / Ctrl+B)", QKeySequence("S"), [this] { split(); });
+    splitAction->setShortcuts({QKeySequence("S"), QKeySequence("Ctrl+B")});
+    splitAction->setToolTip("Split at playhead · S or Ctrl+B");
+    connect(qApp, &QApplication::focusChanged, this, [splitAction](QWidget *, QWidget *focus) {
+        bool typing = false;
+        for (auto *w = focus; w; w = w->parentWidget())
+            typing |= qobject_cast<QLineEdit *>(w) || qobject_cast<QAbstractSpinBox *>(w) ||
+                      qobject_cast<QTextEdit *>(w) || qobject_cast<QPlainTextEdit *>(w) ||
+                      (qobject_cast<QComboBox *>(w) && qobject_cast<QComboBox *>(w)->isEditable());
+        splitAction->setShortcuts(typing ? QList<QKeySequence>{QKeySequence("Ctrl+B")} :
+                                          QList<QKeySequence>{QKeySequence("S"), QKeySequence("Ctrl+B")});
+    });
     action(edit, "Delete selected clip", QKeySequence::Delete, [this] { removeClip(); });
     action(edit, "Add selected media to timeline", QKeySequence("Ctrl+Return"), [this] { addClip(); });
     auto *toolbar = addToolBar("Editing");
     toolbar->setObjectName("EditingToolbar");
     toolbar->addAction("Import", this, [this] { importFiles(); });
     toolbar->addAction("Add clip", this, [this] { addClip(); });
-    toolbar->addAction("Split", this, [this] { split(); });
+    toolbar->addAction(splitAction);
     toolbar->addAction("Delete", this, [this] { removeClip(); });
     auto *snap = toolbar->addAction("Snap");
     snap->setCheckable(true);
@@ -78,12 +90,16 @@ Editor::Editor(QWidget *parent) : QMainWindow(parent), render(this) {
     auto *center = new QWidget;
     auto *layout = new QVBoxLayout(center);
     layout->setContentsMargins(6, 6, 6, 6);
-    previewLabel = new QLabel("SOURCE / TIMELINE VIEWER · CPU rendering");
+    previewLabel = new QLabel("SOURCE / LIVE TIMELINE VIEWER");
     layout->addWidget(previewLabel);
     auto *video = new QVideoWidget;
     video->setMinimumSize(320, 180);
     video->setAccessibleName("Video preview monitor");
-    layout->addWidget(video, 1);
+    viewer = new QStackedWidget;
+    viewer->addWidget(video);
+    timelineMonitor = new VideoMonitor;
+    viewer->addWidget(timelineMonitor);
+    layout->addWidget(viewer, 1);
     player.setVideoOutput(video);
     player.setAudioOutput(&audio);
     audio.setVolume(.7);
@@ -91,17 +107,14 @@ Editor::Editor(QWidget *parent) : QMainWindow(parent), render(this) {
     auto *back = new QPushButton("◀ Frame");
     auto *play = new QPushButton("Play timeline / Pause");
     play->setObjectName("playTimeline");
-    play->setToolTip("Play edited timeline from the playhead; builds a preview in the background if needed");
+    play->setToolTip("Play edited timeline directly from source clips · Space");
     auto *sourcePlay = new QPushButton("Play source / Pause");
     sourcePlay->setObjectName("playSource");
     auto *next = new QPushButton("Frame ▶");
-    auto *preview = new QPushButton("Render timeline preview");
-    preview->setToolTip("Render edited timeline in background, then play. Editing invalidates it.");
     transport->addWidget(back);
     transport->addWidget(play);
     transport->addWidget(sourcePlay);
     transport->addWidget(next);
-    transport->addWidget(preview);
     position = new QLabel("0 / 0");
     transport->addWidget(position);
     layout->addLayout(transport);
@@ -114,42 +127,62 @@ Editor::Editor(QWidget *parent) : QMainWindow(parent), render(this) {
     auto *space = new QShortcut(QKeySequence(Qt::Key_Space), this);
     connect(space, &QShortcut::activated, play, &QPushButton::click);
     connect(back, &QPushButton::clicked, this, [this] {
-        player.pause();
-        player.setPosition(std::max(qint64(0), player.position() - project.rate.us(1) / 1000));
+        if (timelinePlayback)
+            seekFrame(std::max(qint64(0), timelinePlayer.frame() - 1));
+        else {
+            player.pause();
+            player.setPosition(std::max(qint64(0), player.position() - project.rate.us(1) / 1000));
+        }
     });
     connect(next, &QPushButton::clicked, this, [this] {
-        player.pause();
-        player.setPosition(player.position() + project.rate.us(1) / 1000);
+        if (timelinePlayback)
+            seekFrame(timelinePlayer.frame() + 1);
+        else {
+            player.pause();
+            player.setPosition(player.position() + project.rate.us(1) / 1000);
+        }
     });
-    connect(preview, &QPushButton::clicked, this, [this] { renderTimeline(false); });
-    connect(scrub, &QSlider::sliderMoved, &player, &QMediaPlayer::setPosition);
-    connect(&player, &QMediaPlayer::durationChanged, this,
-            [this](qint64 d) { scrub->setRange(0, int(std::min(d, qint64(INT_MAX)))); });
+    connect(scrub, &QSlider::sliderMoved, this, [this](int value) {
+        if (timelinePlayback)
+            seekFrame(value);
+        else
+            player.setPosition(value);
+    });
+    connect(&player, &QMediaPlayer::durationChanged, this, [this](qint64 d) {
+        if (!timelinePlayback)
+            scrub->setRange(0, int(std::min(d, qint64(INT_MAX))));
+    });
     connect(&player, &QMediaPlayer::positionChanged, this, [this](qint64 ms) {
+        if (timelinePlayback)
+            return;
         if (!scrub->isSliderDown())
             scrub->setValue(int(ms));
-        position->setText(
-            QString("%1 / %2 s").arg(ms / 1000.0, 0, 'f', 2).arg(player.duration() / 1000.0, 0, 'f', 2));
-        if (timelinePlayback && pendingPreviewFrame < 0) {
-            timeline->setPlayhead(project.rate.frames(ms * 1000));
-            auto *bar = timelineScroll->horizontalScrollBar();
-            const int x = timeline->playheadX();
-            const int visible = timelineScroll->viewport()->width();
-            if (x < bar->value() || x > bar->value() + visible - 20)
-                bar->setValue(std::max(0, x - visible / 3));
-        }
+        position->setText(QString("%1 / %2 s").arg(ms / 1000.0, 0, 'f', 2)
+                             .arg(player.duration() / 1000.0, 0, 'f', 2));
+    });
+    connect(&timelinePlayer, &TimelinePlayer::frameReady, this, [this](const QImage &image) {
+        timelineMonitor->setFrame(image);
+    });
+    connect(&timelinePlayer, &TimelinePlayer::positionChanged, this, [this](qint64 frame) {
+        if (!timelinePlayback)
+            return;
+        timeline->setPlayhead(frame);
+        scrub->setRange(0, int(project.end()));
+        if (!scrub->isSliderDown())
+            scrub->setValue(int(frame));
+        position->setText(QString("%1 / %2 s").arg(project.rate.us(frame) / 1000000.0, 0, 'f', 2)
+                             .arg(project.rate.us(project.end()) / 1000000.0, 0, 'f', 2));
+        auto *bar = timelineScroll->horizontalScrollBar();
+        const int x = timeline->playheadX();
+        const int visible = timelineScroll->viewport()->width();
+        if (x < bar->value() || x > bar->value() + visible - 20)
+            bar->setValue(std::max(0, x - visible / 3));
+    });
+    connect(&timelinePlayer, &TimelinePlayer::error, this, [this](const QString &message) {
+        statusBar()->showMessage("Timeline playback: " + message, 15000);
     });
     connect(&player, &QMediaPlayer::errorOccurred, this, [this](QMediaPlayer::Error, const QString &s) {
-        statusBar()->showMessage("Playback error: " + s, 15000);
-    });
-    connect(&player, &QMediaPlayer::mediaStatusChanged, this, [this](QMediaPlayer::MediaStatus status) {
-        if (timelinePlayback && pendingPreviewFrame >= 0 &&
-            (status == QMediaPlayer::LoadedMedia || status == QMediaPlayer::BufferedMedia)) {
-            const auto frame = pendingPreviewFrame;
-            pendingPreviewFrame = -1;
-            player.setPosition(project.rate.us(frame) / 1000);
-            player.play();
-        }
+        statusBar()->showMessage("Source playback: " + s, 15000);
     });
     auto *mediaBody = new QWidget;
     auto *ml = new QVBoxLayout(mediaBody);
@@ -278,24 +311,15 @@ Editor::Editor(QWidget *parent) : QMainWindow(parent), render(this) {
     deliverDock = dock(this, "Deliver", "Deliver", delivery, Qt::RightDockWidgetArea);
     tabifyDockWidget(inspectorDock, deliverDock);
     inspectorDock->raise();
-    connect(exportButton, &QPushButton::clicked, this, [this] { renderTimeline(true); });
+    connect(exportButton, &QPushButton::clicked, this, [this] { renderTimeline(); });
     connect(cancel, &QPushButton::clicked, &render, &RenderJob::cancel);
     connect(&render, &RenderJob::progress, progress, &QProgressBar::setValue);
     connect(&render, &RenderJob::finished, this, [this](bool ok, const QString &message) {
-        if (ok && previewRender) {
-            previewPath = message;
-            previewValid = true;
-            if (pendingPreviewFrame >= 0)
-                loadTimelinePreview();
-            else
-                statusBar()->showMessage("Timeline preview ready", 4000);
-        } else if (ok) {
+        if (ok) {
             statusBar()->showMessage("Export validated: " + message, 15000);
             QMessageBox::information(this, "Export complete", "Validated video saved to:\n" + message);
-        } else {
-            pendingPreviewFrame = -1;
+        } else
             error(message);
-        }
     });
     auto *workspace = menuBar()->addMenu("&Workspace");
     for (auto *d : {mediaDock, timelineDock, inspectorDock, deliverDock})
@@ -338,8 +362,8 @@ Editor::Editor(QWidget *parent) : QMainWindow(parent), render(this) {
     action(helpMenu, "About", {}, [this] {
         QMessageBox::about(
             this, "Frameforge",
-            "Frameforge 0.1 — experimental native Linux editor\nIndependent open-source implementation.\nCPU "
-            "render, source playback and rendered timeline preview.\nFusion, grading, automation and "
+            "Frameforge 0.2.0 — experimental native Linux editor\nIndependent open-source implementation.\nCPU "
+            "export and direct timeline playback. Split: S / Ctrl+B.\nFusion, grading, automation and "
             "professional audio are planned.\nNo Mint/GPU compatibility certification yet.");
     });
     connect(&history, &QUndoStack::cleanChanged, this,
@@ -390,8 +414,6 @@ void Editor::error(const QString &s) {
 }
 void Editor::mutate(const QString &label, const std::function<void(Project &)> &fn) {
     try {
-        if (render.busy() && previewRender)
-            throw Error("Cancel the preview render before editing");
         auto next = project;
         fn(next);
         next.validate();
@@ -401,16 +423,14 @@ void Editor::mutate(const QString &label, const std::function<void(Project &)> &
     }
 }
 void Editor::apply(const Project &p) {
+    const auto frame = timeline->playhead();
     project = p;
-    previewValid = false;
-    pendingPreviewFrame = -1;
-    if (timelinePlayback) {
-        timelinePlayback = false;
-        player.stop();
-        player.setSource({});
-        previewLabel->setText("Timeline changed · press Play timeline to rebuild preview");
-    }
     refresh();
+    timelinePlayer.setProject(project);
+    if (timelinePlayback) {
+        seekFrame(frame);
+        previewLabel->setText("LIVE TIMELINE · Space to play · S / Ctrl+B to split");
+    }
 }
 void Editor::refresh() {
     QString current = pool->currentItem() ? pool->currentItem()->data(Qt::UserRole).toString() : QString{};
@@ -546,10 +566,6 @@ void Editor::dropEvent(QDropEvent *event) {
 void Editor::importDroppedFiles(const QStringList &paths, int track, qint64 frame) {
     if (paths.isEmpty())
         return;
-    if (render.busy() && previewRender) {
-        statusBar()->showMessage("Cancel timeline preview rendering before dropping files", 5000);
-        return;
-    }
     const auto generation = epoch;
     auto *watcher = new QFutureWatcher<QVector<Analysis>>(this);
     statusBar()->showMessage(QString("Importing %1 dropped file(s)…").arg(paths.size()));
@@ -647,7 +663,9 @@ void Editor::sourceSelected() {
                               .arg(m.durationUs / 1000000.0, 0, 'f', 3)
                               .arg(m.video ? "yes" : "no", m.audio ? "yes" : "no"));
         timelinePlayback = false;
-        pendingPreviewFrame = -1;
+        timelinePlayer.pause();
+        viewer->setCurrentIndex(0);
+        scrub->setRange(0, int(std::min(player.duration(), qint64(INT_MAX))));
         const auto url = QUrl::fromLocalFile(m.path);
         if (player.source() != url) {
             player.stop();
@@ -681,7 +699,31 @@ void Editor::addClip() {
     });
 }
 void Editor::split() {
-    mutate("Split clip", [&](Project &p) { selection = p.split(selection, timeline->playhead()); });
+    const auto frame = timeline->playhead();
+    const Clip *target = nullptr;
+    for (const auto &clip : project.clips)
+        if (clip.id == selection) {
+            target = &clip;
+            break;
+        }
+    if (!target) {
+        for (const auto &clip : project.clips) {
+            if (project.tracks[clip.track].locked || frame <= clip.start || frame >= clip.start + clip.duration)
+                continue;
+            const bool video = project.tracks[clip.track].kind == "video";
+            const bool targetVideo = target && project.tracks[target->track].kind == "video";
+            if (!target || (video && !targetVideo) || (video == targetVideo && clip.track > target->track))
+                target = &clip;
+        }
+    }
+    if (!target || frame <= target->start || frame >= target->start + target->duration ||
+        project.tracks[target->track].locked) {
+        statusBar()->showMessage("Split: place the playhead inside an unlocked clip (S / Ctrl+B)", 5000);
+        return;
+    }
+    const auto id = target->id;
+    mutate("Split clip", [&](Project &p) { selection = p.split(id, frame); });
+    seekFrame(frame);
 }
 void Editor::removeClip() {
     mutate("Delete clip", [&](Project &p) { p.erase(selection); });
@@ -827,7 +869,6 @@ void Editor::settings() {
         });
 }
 void Editor::playSource() {
-    pendingPreviewFrame = -1;
     if (!timelinePlayback && player.playbackState() == QMediaPlayer::PlayingState) {
         player.pause();
         return;
@@ -847,40 +888,22 @@ void Editor::playSource() {
 }
 void Editor::playTimeline() {
     if (project.clips.isEmpty()) {
-        statusBar()->showMessage(
-            "Timeline is empty. Drop media onto a track or use Add clip. Use Play source to browse footage.",
-            10000);
+        statusBar()->showMessage("Timeline is empty. Drop media onto a track or use Add clip.", 10000);
         return;
     }
-    if (timelinePlayback && player.playbackState() == QMediaPlayer::PlayingState) {
-        player.pause();
+    if (timelinePlayback && timelinePlayer.isPlaying()) {
+        timelinePlayer.pause();
         return;
     }
-    if (timelinePlayback && previewValid && player.source() == QUrl::fromLocalFile(previewPath) &&
-        player.mediaStatus() != QMediaPlayer::EndOfMedia) {
-        player.play();
-        return;
-    }
-    renderTimeline(false);
-}
-void Editor::loadTimelinePreview() {
-    const auto requested = std::max(qint64(0), pendingPreviewFrame);
-    timelinePlayback = false;
-    player.stop();
-    pendingPreviewFrame = requested;
+    player.pause();
     timelinePlayback = true;
-    previewLabel->setText("TIMELINE PREVIEW · matches rendered export");
-    player.setSource(QUrl::fromLocalFile(previewPath));
-    const auto status = player.mediaStatus();
-    if (pendingPreviewFrame >= 0 &&
-        (status == QMediaPlayer::LoadedMedia || status == QMediaPlayer::BufferedMedia)) {
-        const auto frame = pendingPreviewFrame;
-        pendingPreviewFrame = -1;
-        player.setPosition(project.rate.us(frame) / 1000);
-    }
-    player.play();
+    viewer->setCurrentIndex(1);
+    previewLabel->setText("LIVE TIMELINE · Space to pause · S / Ctrl+B to split");
+    const auto frame = timeline->playhead() < project.end() ? timeline->playhead() : 0;
+    timelinePlayer.seek(frame);
+    timelinePlayer.play();
 }
-void Editor::renderTimeline(bool exporting) {
+void Editor::renderTimeline() {
     if (render.busy()) {
         statusBar()->showMessage("A render is already running", 4000);
         return;
@@ -889,50 +912,24 @@ void Editor::renderTimeline(bool exporting) {
         error("No supported FFmpeg video/AAC encoder available");
         return;
     }
-    QString out;
-    if (exporting) {
-        out = QFileDialog::getSaveFileName(this, "Export to a NEW file", "output.mp4", "MP4 (*.mp4)");
-        if (out.isEmpty())
-            return;
-        if (!out.endsWith(".mp4"))
-            out += ".mp4";
-    } else {
-        pendingPreviewFrame = timeline->playhead() < project.end() ? timeline->playhead() : 0;
-        if (previewValid) {
-            loadTimelinePreview();
-            return;
-        }
-        timelinePlayback = false;
-        player.pause();
-        previewLabel->setText("Preparing timeline preview…");
-        if (!previewDirectory.isValid()) {
-            error("No writable preview cache directory");
-            return;
-        }
-        if (!previewPath.isEmpty()) {
-            player.stop();
-            player.setSource({});
-            QFile::remove(previewPath);
-            previewPath.clear();
-        }
-        out = previewDirectory.filePath(uuid() + ".mp4");
-    }
+    auto out = QFileDialog::getSaveFileName(this, "Export to a NEW file", "output.mp4", "MP4 (*.mp4)");
+    if (out.isEmpty())
+        return;
+    if (!out.endsWith(".mp4"))
+        out += ".mp4";
     try {
-        previewRender = !exporting;
         render.start(project, out, codec->currentText());
-        statusBar()->showMessage("Background CPU render started");
+        statusBar()->showMessage("Background CPU export started");
     } catch (const Error &e) {
         error(e.what());
     }
 }
-void Editor::seekFrame(qint64 f) {
+void Editor::seekFrame(qint64 frame) {
     player.pause();
-    timeline->setPlayhead(f);
-    if (timelinePlayback && previewValid) {
-        player.setPosition(project.rate.us(f) / 1000);
-    } else
-        statusBar()->showMessage(QString("Playhead: frame %1. Press Play timeline to view edits.").arg(f),
-                                 4000);
+    timelinePlayback = true;
+    viewer->setCurrentIndex(1);
+    previewLabel->setText("LIVE TIMELINE · Space to play · S / Ctrl+B to split");
+    timelinePlayer.seek(frame);
 }
 void Editor::closeEvent(QCloseEvent *e) {
     if (render.busy()) {

@@ -1,6 +1,6 @@
 # Roadmap
 
-Highest priority: integrate an asynchronous timeline playback engine (evaluate MLT 7 producers/tractor and Qt output), preserving the tested independent model and matching offline renders. Eliminate full preview renders before adding more workspaces.
+0.2.0 replaces full preview renders with direct asynchronous software timeline playback. Next priority: benchmark longer projects, improve prefetching and introduce proxies for demanding footage before expanding workspaces.
 
 Then:
 - Expand safety tests: abrupt termination recovery, process timeouts, concurrent-instance prevention, disk-full and large-project tests; bounded disk/frame/thumbnail caches.

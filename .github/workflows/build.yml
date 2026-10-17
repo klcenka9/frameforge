@@ -13,7 +13,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake qt6-base-dev qt6-multimedia-dev libgl-dev ffmpeg gstreamer1.0-plugins-good gstreamer1.0-libav
+          sudo apt-get install -y build-essential cmake pkg-config libavformat-dev libavcodec-dev libavutil-dev libswscale-dev libswresample-dev qt6-base-dev qt6-multimedia-dev libgl-dev ffmpeg gstreamer1.0-plugins-good gstreamer1.0-libav pulseaudio xvfb
       - name: Configure
         run: cmake --preset release
       - name: Build
@@ -25,3 +25,7 @@ jobs:
           PULSE_SERVER: unix:/tmp/frameforge-no-pulse
           G_DEBUG: fatal-criticals
         run: ctest --preset release
+      - name: Virtual audio output and playback clock
+        run: bash scripts/test-audio.sh "$PWD/build-release"
+      - name: Native X11 desktop
+        run: bash scripts/test-x11.sh "$PWD/build-release"

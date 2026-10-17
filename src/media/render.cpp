@@ -65,7 +65,9 @@ QStringList renderArguments(const Project &p, const QString &out, const QString 
         }
         ++index;
     }
-    filters << QString("%1amix=inputs=%2:duration=longest:normalize=0,alimiter=limit=0.95:latency=1[aout]")
+    filters << QString("%1amix=inputs=%2:duration=longest:normalize=0,"
+                       "aeval='clip(val(0),-0.95,0.95)|clip(val(1),-0.95,0.95)',"
+                       "aformat=channel_layouts=stereo[aout]")
                    .arg(audios.join(""))
                    .arg(audios.size());
     args << "-filter_complex" << filters.join(';') << "-map" << "[" + video + "]" << "-map" << "[aout]"

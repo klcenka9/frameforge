@@ -9,6 +9,8 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QListWidget>
+#include <QLineEdit>
+#include <QAction>
 #include <QMimeData>
 #include <QPushButton>
 #include <QScreen>
@@ -46,9 +48,10 @@ class EditorTests : public QObject {
         QVERIFY(play);
         QTest::mouseClick(play, Qt::LeftButton);
         QTRY_VERIFY_WITH_TIMEOUT(e.timelinePlayback, 15000);
+        QVERIFY(!e.render.busy());
         QTRY_VERIFY_WITH_TIMEOUT(e.timeline->playhead() > 20, 10000);
         QTest::mouseClick(play, Qt::LeftButton);
-        QCOMPARE(e.player.playbackState(), QMediaPlayer::PausedState);
+        QVERIFY(!e.timelinePlayer.isPlaying());
         auto frame = e.timeline->playhead();
         QTest::qWait(150);
         QVERIFY(qAbs(e.timeline->playhead() - frame) <= 1);
@@ -56,7 +59,7 @@ class EditorTests : public QObject {
         QCOMPARE(e.timeline->playhead(), qint64(30));
         QTest::mouseClick(play, Qt::LeftButton);
         QTRY_VERIFY_WITH_TIMEOUT(e.timeline->playhead() > 35, 10000);
-        e.player.pause();
+        e.timelinePlayer.pause();
         e.apply(e.project);
         QTest::mouseClick(play, Qt::LeftButton);
         e.playSource();
@@ -270,17 +273,14 @@ class EditorTests : public QObject {
         e.writeRecovery();
         QCOMPARE(Project::load(e.recoveryPath()).clip(e.selection).duration, 20);
         QSignalSpy rendered(&e.render, &RenderJob::finished);
-        e.renderTimeline(false);
-        QVERIFY(rendered.wait(30000));
-        QVERIFY2(rendered[0][0].toBool(), qPrintable(rendered[0][1].toString()));
+        QSignalSpy live(&e.timelinePlayer, &TimelinePlayer::frameReady);
+        e.playTimeline();
+        QTRY_VERIFY_WITH_TIMEOUT(!live.isEmpty(), 5000);
         QVERIFY(e.timelinePlayback);
-        QVERIFY(e.previewValid);
-        QVERIFY(probe(e.previewPath).video);
-        frames.clear();
-        e.player.play();
-        QTRY_VERIFY_WITH_TIMEOUT(video->videoSink()->videoFrame().isValid(), 10000);
-        QVERIFY(!video->videoSink()->videoFrame().toImage().isNull());
-        e.player.pause();
+        QVERIFY(!e.render.busy());
+        QVERIFY(rendered.isEmpty());
+        QVERIFY(!qvariant_cast<QImage>(live.last()[0]).isNull());
+        e.timelinePlayer.pause();
         e.seekFrame(35);
         QCOMPARE(e.timeline->playhead(), qint64(35));
         if (QGuiApplication::platformName() == "xcb") {
@@ -289,6 +289,54 @@ class EditorTests : public QObject {
         } else {
             QVERIFY(e.grab().save("desktop-preview.png"));
         }
+        e.history.setClean();
+        QFile::remove(e.recoveryPath());
+    }
+    void splitShortcutsAndTyping() {
+        QTemporaryDir dir;
+        qputenv("XDG_DATA_HOME", dir.path().toUtf8());
+        qputenv("XDG_CONFIG_HOME", dir.path().toUtf8());
+        const auto path = dir.filePath("split.mp4");
+        QProcess gen;
+        gen.start("ffmpeg", {"-v", "error", "-f", "lavfi", "-i", "color=red:s=160x90:r=25:d=4",
+                             "-c:v", "mpeg4", path});
+        QVERIFY(gen.waitForFinished());
+        QCOMPARE(gen.exitCode(), 0);
+        Editor e;
+        e.show();
+        e.importPath(path);
+        QTRY_COMPARE_WITH_TIMEOUT(e.project.media.size(), 1, 15000);
+        e.addClip();
+        QApplication::setActiveWindow(&e);
+        e.timeline->setFocus();
+        e.selection.clear();
+        e.timeline->setPlayhead(25);
+        QTest::keyClick(e.timeline, Qt::Key_S);
+        QTRY_COMPARE(e.project.clips.size(), 2);
+        QVERIFY(!e.render.busy());
+        e.timeline->setPlayhead(50);
+        QTest::keySequence(e.timeline, QKeySequence("Ctrl+B"));
+        QTRY_COMPARE(e.project.clips.size(), 3);
+        e.history.undo();
+        QCOMPARE(e.project.clips.size(), 2);
+        e.history.redo();
+        QCOMPARE(e.project.clips.size(), 3);
+        auto *text = e.findChild<QLineEdit *>();
+        QVERIFY(text);
+        text->setFocus();
+        QTest::keyClicks(text, "sss");
+        QVERIFY(text->text().endsWith("sss"));
+        QCOMPARE(e.project.clips.size(), 3);
+        text->clear();
+        e.timeline->setFocus();
+        // Boundary and locked-track splits do not open a modal dialog.
+        e.split();
+        QCOMPARE(e.project.clips.size(), 3);
+        e.mutate("Lock", [](Project &p) { p.tracks[0].locked = true; });
+        e.timeline->setPlayhead(65);
+        QTest::keyClick(e.timeline, Qt::Key_S);
+        QCOMPARE(e.project.clips.size(), 3);
+        QVERIFY(!e.statusBar()->currentMessage().isEmpty());
         e.history.setClean();
         QFile::remove(e.recoveryPath());
     }

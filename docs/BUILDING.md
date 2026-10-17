@@ -1,6 +1,6 @@
 # Build and packaging
 
-Requirements: C++20 compiler, CMake 3.22+, Qt 6.4+ Core/Gui/Widgets/Concurrent/Multimedia/MultimediaWidgets/Test, FFmpeg and FFprobe on PATH. Qt is dynamically linked; FFmpeg runs as an external process. No external source is vendored into the application. Build/test commands are in README.
+Requirements: C++20 compiler, CMake 3.22+, Qt 6.4+ Core/Gui/Widgets/Concurrent/Multimedia/MultimediaWidgets/Test, pkg-config, FFmpeg 5.1+ development libraries (libavformat, libavcodec, libavutil, libswscale, libswresample), and FFmpeg/FFprobe on PATH. Qt and the libav libraries are dynamically linked; final export/probing use external processes. No external source is vendored into the application. Build/test commands are in README.
 
 Debian 13 / Qt 6.8.2 / GCC 14 is the current build environment. Ubuntu 24.04 / Qt 6.4.2 compilation and headless tests passed in GitHub Actions; Mint installations remain unverified. Qt runtime multimedia codec/plugin availability varies by distribution. CTest generates its own small media; no footage is downloaded.
 
@@ -23,7 +23,7 @@ cmake --preset release
 cmake --build --preset release -j4
 ctest --preset release
 (umask 022; cd build-release && cpack -G DEB)
-sudo apt install ./build-release/Frameforge-0.1.2-Linux.deb
+sudo apt install ./build-release/Frameforge-0.2.0-Linux.deb
 sudo apt remove frameforge
 ```
 
@@ -33,10 +33,10 @@ Build packages on the oldest target distribution to avoid glibc/Qt symbol incomp
 
 - Missing Qt CMake packages: install Qt development packages and match their Qt runtime versions.
 - Missing FFmpeg/FFprobe or AAC/video encoders: install your distribution's supported multimedia package; inspect Help → Backend diagnostics. Encoder names alone do not verify hardware.
-- Black viewer: check that the local source exists, select it again, inspect playback error in status bar; timeline edits require Render timeline preview.
-- Audio without an output device: preview video and export remain useful; actual speaker playback needs a working PipeWire/PulseAudio setup. The test environment has none.
+- Black viewer: check that the local source exists, select it again, inspect playback error in status bar; press Play timeline or seek on the ruler for direct timeline playback; inspect the status bar for source/decoder errors.
+- Audio without an output device: preview video and export remain useful; actual speaker playback needs a working PipeWire/PulseAudio setup. A virtual audio sink can verify device-clock playback; physical speaker output still needs desktop testing.
 - Export fails: error dialog includes FFmpeg diagnostics. Existing outputs are refused. Use a writable directory and new filename; missing-media errors require relinking.
 - X11 fallback: `QT_QPA_PLATFORM=xcb ./build/frameforge`; Wayland: `QT_QPA_PLATFORM=wayland ./build/frameforge` if the relevant Qt platform plugin is installed. Neither implies a tested real desktop configuration.
-- CPU decoding for Qt's FFmpeg backend: `QT_FFMPEG_DECODING_HW_DEVICE_TYPES=, ./build/frameforge` (Qt 6.8 tested). This is a Qt backend debug setting and may vary by version. Export always uses software decoding/encoding here.
+- CPU decoding for Qt's FFmpeg backend: `QT_FFMPEG_DECODING_HW_DEVICE_TYPES=, ./build/frameforge` (Qt 6.8 tested). This is a Qt backend debug setting and may vary by version. Timeline playback and export always use software decoding here; this variable only affects source browsing with Qt's FFmpeg backend.
 
 For Qt builds using GStreamer (including Ubuntu 24.04 Qt 6.4), install `gstreamer1.0-plugins-good gstreamer1.0-libav` for MP4/MPEG-4/H.264/AAC playback. The one-command installer includes these packages.
