@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "editor.h"
 #include "media/media.h"
+#include "media_drop.h"
+#include "media_pool.h"
 #include "timeline.h"
 #include <QFutureWatcher>
 #include <QSettings>
@@ -34,6 +36,7 @@ static QDockWidget *dock(QMainWindow *w, const QString &title, const QString &na
 }
 Editor::Editor(QWidget *parent) : QMainWindow(parent), render(this) {
     setObjectName("FrameforgeEditor");
+    setAcceptDrops(true);
     resize(1440, 900);
     setMinimumSize(900, 600);
     setDockNestingEnabled(true);
@@ -86,12 +89,17 @@ Editor::Editor(QWidget *parent) : QMainWindow(parent), render(this) {
     audio.setVolume(.7);
     auto *transport = new QHBoxLayout;
     auto *back = new QPushButton("◀ Frame");
-    auto *play = new QPushButton("Play / Pause");
+    auto *play = new QPushButton("Play timeline / Pause");
+    play->setObjectName("playTimeline");
+    play->setToolTip("Play edited timeline from the playhead; builds a preview in the background if needed");
+    auto *sourcePlay = new QPushButton("Play source / Pause");
+    sourcePlay->setObjectName("playSource");
     auto *next = new QPushButton("Frame ▶");
     auto *preview = new QPushButton("Render timeline preview");
     preview->setToolTip("Render edited timeline in background, then play. Editing invalidates it.");
     transport->addWidget(back);
     transport->addWidget(play);
+    transport->addWidget(sourcePlay);
     transport->addWidget(next);
     transport->addWidget(preview);
     position = new QLabel("0 / 0");
@@ -101,16 +109,8 @@ Editor::Editor(QWidget *parent) : QMainWindow(parent), render(this) {
     scrub->setAccessibleName("Viewer position");
     layout->addWidget(scrub);
     setCentralWidget(center);
-    connect(play, &QPushButton::clicked, this, [this] {
-        if (player.source().isEmpty()) {
-            statusBar()->showMessage("Select media or render the timeline preview", 5000);
-            return;
-        }
-        if (player.playbackState() == QMediaPlayer::PlayingState)
-            player.pause();
-        else
-            player.play();
-    });
+    connect(play, &QPushButton::clicked, this, &Editor::playTimeline);
+    connect(sourcePlay, &QPushButton::clicked, this, &Editor::playSource);
     auto *space = new QShortcut(QKeySequence(Qt::Key_Space), this);
     connect(space, &QShortcut::activated, play, &QPushButton::click);
     connect(back, &QPushButton::clicked, this, [this] {
@@ -130,18 +130,35 @@ Editor::Editor(QWidget *parent) : QMainWindow(parent), render(this) {
             scrub->setValue(int(ms));
         position->setText(
             QString("%1 / %2 s").arg(ms / 1000.0, 0, 'f', 2).arg(player.duration() / 1000.0, 0, 'f', 2));
-        if (timelinePlayback)
+        if (timelinePlayback && pendingPreviewFrame < 0) {
             timeline->setPlayhead(project.rate.frames(ms * 1000));
+            auto *bar = timelineScroll->horizontalScrollBar();
+            const int x = timeline->playheadX();
+            const int visible = timelineScroll->viewport()->width();
+            if (x < bar->value() || x > bar->value() + visible - 20)
+                bar->setValue(std::max(0, x - visible / 3));
+        }
     });
     connect(&player, &QMediaPlayer::errorOccurred, this, [this](QMediaPlayer::Error, const QString &s) {
         statusBar()->showMessage("Playback error: " + s, 15000);
+    });
+    connect(&player, &QMediaPlayer::mediaStatusChanged, this, [this](QMediaPlayer::MediaStatus status) {
+        if (timelinePlayback && pendingPreviewFrame >= 0 &&
+            (status == QMediaPlayer::LoadedMedia || status == QMediaPlayer::BufferedMedia)) {
+            const auto frame = pendingPreviewFrame;
+            pendingPreviewFrame = -1;
+            player.setPosition(project.rate.us(frame) / 1000);
+            player.play();
+        }
     });
     auto *mediaBody = new QWidget;
     auto *ml = new QVBoxLayout(mediaBody);
     auto *search = new QLineEdit;
     search->setPlaceholderText("Search imported media");
     search->setAccessibleName("Search media");
-    pool = new QListWidget;
+    pool = new MediaPool;
+    connect(pool, &MediaPool::filesDropped, this,
+            [this](const QStringList &files) { importDroppedFiles(files); });
     pool->setIconSize({96, 54});
     pool->setMinimumWidth(230);
     pool->setAccessibleName("Project media pool");
@@ -169,6 +186,7 @@ Editor::Editor(QWidget *parent) : QMainWindow(parent), render(this) {
     });
     timeline = new Timeline;
     auto *scroll = new QScrollArea;
+    timelineScroll = scroll;
     scroll->setWidget(timeline);
     scroll->setWidgetResizable(true);
     scroll->setMinimumHeight(245);
@@ -187,6 +205,16 @@ Editor::Editor(QWidget *parent) : QMainWindow(parent), render(this) {
         inspect();
     });
     connect(timeline, &Timeline::seek, this, &Editor::seekFrame);
+    connect(timeline, &Timeline::filesDropped, this, &Editor::importDroppedFiles);
+    connect(timeline, &Timeline::mediaDropped, this, [this](const QString &id, int track, qint64 frame) {
+        mutate("Drop media clip", [&](Project &p) {
+            if (p.tracks[track].locked)
+                throw Error("Track is locked");
+            const auto &m = p.source(id);
+            selection = uuid();
+            p.clips.append({selection, id, track, frame, 0, p.rate.frames(m.durationUs)});
+        });
+    });
     connect(timeline, &Timeline::moved, this, [this](const QString &id, int track, qint64 frame) {
         mutate("Move clip", [&](Project &p) { p.move(id, track, frame); });
     });
@@ -257,15 +285,17 @@ Editor::Editor(QWidget *parent) : QMainWindow(parent), render(this) {
         if (ok && previewRender) {
             previewPath = message;
             previewValid = true;
-            timelinePlayback = true;
-            player.setSource(QUrl::fromLocalFile(previewPath));
-            previewLabel->setText("TIMELINE PREVIEW · matches rendered export");
-            player.play();
+            if (pendingPreviewFrame >= 0)
+                loadTimelinePreview();
+            else
+                statusBar()->showMessage("Timeline preview ready", 4000);
         } else if (ok) {
             statusBar()->showMessage("Export validated: " + message, 15000);
             QMessageBox::information(this, "Export complete", "Validated video saved to:\n" + message);
-        } else
+        } else {
+            pendingPreviewFrame = -1;
             error(message);
+        }
     });
     auto *workspace = menuBar()->addMenu("&Workspace");
     for (auto *d : {mediaDock, timelineDock, inspectorDock, deliverDock})
@@ -348,7 +378,12 @@ Editor::Editor(QWidget *parent) : QMainWindow(parent), render(this) {
     });
 }
 Editor::~Editor() {
+    // Detach while both the sink widget and audio output are still alive.
+    disconnect(&player, nullptr, this, nullptr);
     player.stop();
+    player.setVideoOutput(nullptr);
+    player.setAudioOutput(nullptr);
+    player.setSource({});
 }
 void Editor::error(const QString &s) {
     QMessageBox::warning(this, "Frameforge", s);
@@ -368,11 +403,12 @@ void Editor::mutate(const QString &label, const std::function<void(Project &)> &
 void Editor::apply(const Project &p) {
     project = p;
     previewValid = false;
+    pendingPreviewFrame = -1;
     if (timelinePlayback) {
+        timelinePlayback = false;
         player.stop();
         player.setSource({});
-        timelinePlayback = false;
-        previewLabel->setText("Timeline changed · render preview to play edits");
+        previewLabel->setText("Timeline changed · press Play timeline to rebuild preview");
     }
     refresh();
 }
@@ -383,6 +419,7 @@ void Editor::refresh() {
     for (const auto &m : project.media) {
         auto *i = new QListWidgetItem(QFileInfo(m.path).fileName(), pool);
         i->setData(Qt::UserRole, m.id);
+        i->setData(Qt::UserRole + 1, m.path);
         i->setToolTip(m.path);
         if (!QFileInfo::exists(m.path)) {
             i->setForeground(QColor("#f48b82"));
@@ -467,7 +504,10 @@ void Editor::importPath(const QString &path, const QString &relinkId) {
             if (pool->item(i)->data(Qt::UserRole).toString() == id) {
                 if (!result.image.isNull())
                     pool->item(i)->setIcon(QPixmap::fromImage(result.image));
-                pool->setCurrentRow(i);
+                {
+                    QSignalBlocker block(pool);
+                    pool->setCurrentRow(i);
+                }
                 sourceSelected();
             }
         statusBar()->showMessage("Media analysis finished", 3000);
@@ -484,6 +524,116 @@ void Editor::importPath(const QString &path, const QString &relinkId) {
         return r;
     }));
 }
+void Editor::dragEnterEvent(QDragEnterEvent *event) {
+    if (!hasMediaId(event->mimeData()) && !droppedFiles(event->mimeData()).isEmpty())
+        acceptMediaCopy(event);
+}
+void Editor::dragMoveEvent(QDragMoveEvent *event) {
+    if (!hasMediaId(event->mimeData()) && !droppedFiles(event->mimeData()).isEmpty())
+        acceptMediaCopy(event);
+}
+void Editor::dropEvent(QDropEvent *event) {
+    if (!event->possibleActions().testFlag(Qt::CopyAction)) {
+        event->ignore();
+        return;
+    }
+    auto paths = droppedFiles(event->mimeData());
+    if (!hasMediaId(event->mimeData()) && !paths.isEmpty()) {
+        importDroppedFiles(paths);
+        acceptMediaCopy(event);
+    }
+}
+void Editor::importDroppedFiles(const QStringList &paths, int track, qint64 frame) {
+    if (paths.isEmpty())
+        return;
+    if (render.busy() && previewRender) {
+        statusBar()->showMessage("Cancel timeline preview rendering before dropping files", 5000);
+        return;
+    }
+    const auto generation = epoch;
+    auto *watcher = new QFutureWatcher<QVector<Analysis>>(this);
+    statusBar()->showMessage(QString("Importing %1 dropped file(s)…").arg(paths.size()));
+    connect(watcher, &QFutureWatcher<QVector<Analysis>>::finished, this,
+            [this, watcher, generation, track, frame] {
+                const auto results = watcher->result();
+                watcher->deleteLater();
+                if (generation != epoch)
+                    return;
+                QStringList errors;
+                QVector<Media> imported;
+                for (const auto &result : results) {
+                    if (!result.error.isEmpty()) {
+                        errors.append(result.error);
+                        continue;
+                    }
+                    imported.append(result.media);
+                    if (thumbnails.size() >= 256)
+                        thumbnails.clear();
+                    if (!result.image.isNull())
+                        thumbnails.insert(result.media.id, result.image);
+                }
+                if (!imported.isEmpty())
+                    mutate(track < 0 ? "Drop media files" : "Drop files on timeline", [&](Project &p) {
+                        QHash<int, qint64> cursors;
+                        for (auto media : imported) {
+                            for (const auto &existing : p.media)
+                                if (QFileInfo(existing.path).absoluteFilePath() ==
+                                    QFileInfo(media.path).absoluteFilePath()) {
+                                    media = existing;
+                                    break;
+                                }
+                            bool found = false;
+                            for (const auto &existing : p.media)
+                                found |= existing.id == media.id;
+                            if (!found)
+                                p.media.append(media);
+                            if (track >= 0) {
+                                int target = track;
+                                auto compatible = [&](int t) {
+                                    return p.tracks[t].kind == "video" ? media.video : media.audio;
+                                };
+                                if (target >= p.tracks.size() || p.tracks[target].locked)
+                                    throw Error("Invalid or locked track");
+                                if (!compatible(target)) {
+                                    target = -1;
+                                    for (int i = 0; i < p.tracks.size(); ++i)
+                                        if (!p.tracks[i].locked && compatible(i)) {
+                                            target = i;
+                                            break;
+                                        }
+                                    if (target < 0)
+                                        throw Error("No compatible unlocked track");
+                                }
+                                auto start = cursors.value(target, frame);
+                                auto duration = p.rate.frames(media.durationUs);
+                                selection = uuid();
+                                p.clips.append({selection, media.id, target, start, 0, duration});
+                                cursors[target] = start + duration;
+                            }
+                        }
+                    });
+                if (!errors.isEmpty())
+                    statusBar()->showMessage("Import failed: " + errors.join("; "), 15000);
+                else
+                    statusBar()->showMessage(
+                        track < 0 ? "Dropped media imported" : "Dropped clips added to timeline", 4000);
+            });
+    watcher->setFuture(QtConcurrent::run([paths] {
+        QVector<Analysis> results;
+        for (const auto &path : paths) {
+            Analysis result;
+            try {
+                result.media = probe(path);
+                if (result.media.video)
+                    result.image = thumbnail(path);
+            } catch (const std::exception &e) {
+                result.error = QString::fromUtf8(e.what());
+            }
+            results.append(result);
+        }
+        return results;
+    }));
+}
 void Editor::sourceSelected() {
     auto *i = pool->currentItem();
     if (!i)
@@ -497,8 +647,12 @@ void Editor::sourceSelected() {
                               .arg(m.durationUs / 1000000.0, 0, 'f', 3)
                               .arg(m.video ? "yes" : "no", m.audio ? "yes" : "no"));
         timelinePlayback = false;
-        player.stop();
-        player.setSource(QUrl::fromLocalFile(m.path));
+        pendingPreviewFrame = -1;
+        const auto url = QUrl::fromLocalFile(m.path);
+        if (player.source() != url) {
+            player.stop();
+            player.setSource(url);
+        }
         previewLabel->setText("SOURCE · " + QFileInfo(m.path).fileName());
     } catch (const Error &e) {
         error(e.what());
@@ -672,6 +826,60 @@ void Editor::settings() {
             p.rate = {rate.currentData().toInt(), 1};
         });
 }
+void Editor::playSource() {
+    pendingPreviewFrame = -1;
+    if (!timelinePlayback && player.playbackState() == QMediaPlayer::PlayingState) {
+        player.pause();
+        return;
+    }
+    if (timelinePlayback || player.source().isEmpty()) {
+        if (!pool->currentItem()) {
+            statusBar()->showMessage("Select imported media first", 5000);
+            return;
+        }
+        sourceSelected();
+    }
+    if (player.source().isEmpty()) {
+        statusBar()->showMessage("Select imported media first", 5000);
+        return;
+    }
+    player.play();
+}
+void Editor::playTimeline() {
+    if (project.clips.isEmpty()) {
+        statusBar()->showMessage(
+            "Timeline is empty. Drop media onto a track or use Add clip. Use Play source to browse footage.",
+            10000);
+        return;
+    }
+    if (timelinePlayback && player.playbackState() == QMediaPlayer::PlayingState) {
+        player.pause();
+        return;
+    }
+    if (timelinePlayback && previewValid && player.source() == QUrl::fromLocalFile(previewPath) &&
+        player.mediaStatus() != QMediaPlayer::EndOfMedia) {
+        player.play();
+        return;
+    }
+    renderTimeline(false);
+}
+void Editor::loadTimelinePreview() {
+    const auto requested = std::max(qint64(0), pendingPreviewFrame);
+    timelinePlayback = false;
+    player.stop();
+    pendingPreviewFrame = requested;
+    timelinePlayback = true;
+    previewLabel->setText("TIMELINE PREVIEW · matches rendered export");
+    player.setSource(QUrl::fromLocalFile(previewPath));
+    const auto status = player.mediaStatus();
+    if (pendingPreviewFrame >= 0 &&
+        (status == QMediaPlayer::LoadedMedia || status == QMediaPlayer::BufferedMedia)) {
+        const auto frame = pendingPreviewFrame;
+        pendingPreviewFrame = -1;
+        player.setPosition(project.rate.us(frame) / 1000);
+    }
+    player.play();
+}
 void Editor::renderTimeline(bool exporting) {
     if (render.busy()) {
         statusBar()->showMessage("A render is already running", 4000);
@@ -689,13 +897,14 @@ void Editor::renderTimeline(bool exporting) {
         if (!out.endsWith(".mp4"))
             out += ".mp4";
     } else {
+        pendingPreviewFrame = timeline->playhead() < project.end() ? timeline->playhead() : 0;
         if (previewValid) {
-            previewLabel->setText("TIMELINE PREVIEW · matches rendered export");
-            timelinePlayback = true;
-            player.setSource(QUrl::fromLocalFile(previewPath));
-            player.play();
+            loadTimelinePreview();
             return;
         }
+        timelinePlayback = false;
+        player.pause();
+        previewLabel->setText("Preparing timeline preview…");
         if (!previewDirectory.isValid()) {
             error("No writable preview cache directory");
             return;
@@ -717,12 +926,12 @@ void Editor::renderTimeline(bool exporting) {
     }
 }
 void Editor::seekFrame(qint64 f) {
+    player.pause();
     timeline->setPlayhead(f);
     if (timelinePlayback && previewValid) {
-        player.pause();
         player.setPosition(project.rate.us(f) / 1000);
     } else
-        statusBar()->showMessage(QString("Playhead: frame %1. Render timeline preview to view edits.").arg(f),
+        statusBar()->showMessage(QString("Playhead: frame %1. Press Play timeline to view edits.").arg(f),
                                  4000);
 }
 void Editor::closeEvent(QCloseEvent *e) {

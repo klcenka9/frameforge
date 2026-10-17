@@ -15,14 +15,20 @@ class Timeline : public QWidget {
         return head;
     }
     bool snapping = true;
+    int playheadX() const;
   signals:
     void selected(const QString &id);
     void seek(qint64 frame);
     void moved(const QString &id, int track, qint64 frame);
     void trackToggled(int track, int control);
+    void mediaDropped(const QString &id, int track, qint64 frame);
+    void filesDropped(const QStringList &paths, int track, qint64 frame);
 
   protected:
     void paintEvent(QPaintEvent *) override;
+    void dragEnterEvent(QDragEnterEvent *) override;
+    void dragMoveEvent(QDragMoveEvent *) override;
+    void dropEvent(QDropEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
     void mouseReleaseEvent(QMouseEvent *) override;

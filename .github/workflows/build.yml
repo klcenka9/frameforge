@@ -23,4 +23,5 @@ jobs:
           QT_QPA_PLATFORM: offscreen
           QT_FFMPEG_DECODING_HW_DEVICE_TYPES: ','
           PULSE_SERVER: unix:/tmp/frameforge-no-pulse
+          G_DEBUG: fatal-criticals
         run: ctest --preset release

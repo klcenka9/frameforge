@@ -23,7 +23,7 @@ cmake --preset release
 cmake --build --preset release -j4
 ctest --preset release
 (umask 022; cd build-release && cpack -G DEB)
-sudo apt install ./build-release/Frameforge-0.1.1-Linux.deb
+sudo apt install ./build-release/Frameforge-0.1.2-Linux.deb
 sudo apt remove frameforge
 ```
 

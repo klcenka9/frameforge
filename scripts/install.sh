@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 set -euo pipefail
 repo="klcenka9/frameforge"
-version="0.1.1"
+version="0.1.2"
 prefix="${HOME}/.local"
 source_dir=""
 install_dependencies=true
@@ -15,7 +15,7 @@ while [[ $# -gt 0 ]]; do
 Frameforge source installer (Debian / Ubuntu / Linux Mint)
 Usage: bash install.sh [--prefix /absolute/path] [--no-deps] [--source /local/checkout]
 Default: install distribution build dependencies through sudo apt-get, download
-v0.1.1, build as your current user and install under $HOME/.local.
+v0.1.2, build as your current user and install under $HOME/.local.
 Requires Qt >= 6.4 (target: Mint 22+, Ubuntu 24.04+, Debian 12+).
 --no-deps skips apt when dependencies are already installed.
 No proprietary drivers or bundled multimedia codecs are installed.

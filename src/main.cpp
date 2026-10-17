@@ -8,7 +8,7 @@ int main(int argc, char **argv) {
     QApplication app(argc, argv);
     app.setApplicationName("Frameforge");
     app.setOrganizationName("Frameforge");
-    app.setApplicationVersion("0.1.1");
+    app.setApplicationVersion("0.1.2");
 
     ff::applyTheme(app);
     ff::Editor editor;

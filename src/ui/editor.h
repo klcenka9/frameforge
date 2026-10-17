@@ -18,10 +18,12 @@ class QComboBox;
 class QProgressBar;
 class QDockWidget;
 class QSlider;
+class QScrollArea;
 class QVideoWidget;
 class QAction;
 namespace ff {
 class Timeline;
+class MediaPool;
 class Editor : public QMainWindow {
     Q_OBJECT
   public:
@@ -32,6 +34,9 @@ class Editor : public QMainWindow {
 
   protected:
     void closeEvent(QCloseEvent *) override;
+    void dragEnterEvent(QDragEnterEvent *) override;
+    void dragMoveEvent(QDragMoveEvent *) override;
+    void dropEvent(QDropEvent *) override;
 
   private:
     Project project;
@@ -46,7 +51,9 @@ class Editor : public QMainWindow {
     QAudioOutput audio;
     RenderJob render;
     QTimer autosave;
-    QListWidget *pool;
+    MediaPool *pool;
+    QScrollArea *timelineScroll;
+    qint64 pendingPreviewFrame = -1;
     QLabel *metadata, *position, *previewLabel, *exportInfo;
     Timeline *timeline;
     QSpinBox *clipIn, *clipDuration, *clipStart;
@@ -59,6 +66,10 @@ class Editor : public QMainWindow {
     void refresh();
     void inspect();
     void importFiles();
+    void importDroppedFiles(const QStringList &, int track = -1, qint64 frame = 0);
+    void playTimeline();
+    void playSource();
+    void loadTimelinePreview();
     void importPath(const QString &path, const QString &relinkId = {});
     void sourceSelected();
     void addClip();

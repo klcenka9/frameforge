@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "timeline.h"
+#include "media_drop.h"
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QFileInfo>
 #include <QMouseEvent>
 #include <QPainter>
@@ -8,9 +12,10 @@
 namespace ff {
 Timeline::Timeline(QWidget *p) : QWidget(p) {
     setFocusPolicy(Qt::StrongFocus);
+    setAcceptDrops(true);
     setAccessibleName("Multitrack timeline");
-    setToolTip(
-        "Click ruler to seek; drag clips to move. M: mute, S: solo, L: lock. Exact trims are in Inspector.");
+    setToolTip("Drop files or media-pool clips on a track. Click ruler to seek; drag clips to move. M: mute, "
+               "S: solo, L: lock. Exact trims are in Inspector.");
     geometryChanged();
 }
 void Timeline::setProject(const Project &p) {
@@ -40,6 +45,43 @@ qint64 Timeline::frameAt(int x) const {
 }
 QRectF Timeline::rectangle(const Clip &c) const {
     return {160 + c.start * pixels, 48.0 + c.track * 68, std::max(2.0, c.duration * pixels), 58};
+}
+int Timeline::playheadX() const {
+    return int(std::clamp(160.0 + head * pixels, 0.0, double(width() - 1)));
+}
+void Timeline::dragEnterEvent(QDragEnterEvent *event) {
+    if (hasMediaId(event->mimeData()) || !droppedFiles(event->mimeData()).isEmpty())
+        acceptMediaCopy(event);
+}
+void Timeline::dragMoveEvent(QDragMoveEvent *event) {
+    if ((hasMediaId(event->mimeData()) || !droppedFiles(event->mimeData()).isEmpty()) &&
+        event->position().x() >= 160 && event->position().y() >= 48 &&
+        event->position().y() < 48 + project.tracks.size() * 68)
+        acceptMediaCopy(event);
+    else
+        event->ignore();
+}
+void Timeline::dropEvent(QDropEvent *event) {
+    if (!event->possibleActions().testFlag(Qt::CopyAction)) {
+        event->ignore();
+        return;
+    }
+    if (event->position().x() < 160 || event->position().y() < 48)
+        return;
+    int track = int((event->position().y() - 48) / 68);
+    if (track < 0 || track >= project.tracks.size())
+        return;
+    auto frame = frameAt(event->position().x());
+    if (hasMediaId(event->mimeData())) {
+        emit mediaDropped(QString::fromUtf8(event->mimeData()->data(mediaIdMime)), track, frame);
+        acceptMediaCopy(event);
+    } else {
+        auto paths = droppedFiles(event->mimeData());
+        if (!paths.isEmpty()) {
+            emit filesDropped(paths, track, frame);
+            acceptMediaCopy(event);
+        }
+    }
 }
 void Timeline::paintEvent(QPaintEvent *) {
     QPainter p(this);
